@@ -24,6 +24,7 @@ This project was inspired by [Betterfox Issue #167](https://github.com/yokoffing
 - Release Windows executable
 - Build MacOS executable
 - Build a executable to Linux systems
+- Add an app icon
 
 ## How to Use
 

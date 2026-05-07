@@ -4,3 +4,7 @@ __pycache__/
 *.tmp
 *.bak
 .DS_Store
+/venv/
+/build/
+/dist/
+/*.spec

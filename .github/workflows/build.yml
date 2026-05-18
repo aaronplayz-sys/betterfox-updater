@@ -27,7 +27,20 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install requests customtkinter psutil pyinstaller
+        run: pip install requests customtkinter psutil
+
+      # Rebuild the bootloader from source to avoid AV false positives.
+      # The default PyInstaller bootloader has a known binary signature that
+      # heuristic scanners (e.g. Wacatac.B!ml) flag. Building it fresh breaks
+      # that signature match. MSVC is pre-installed on windows-latest.
+      - name: Rebuild PyInstaller bootloader
+        run: |
+          pip install pyinstaller
+          git clone --depth 1 https://github.com/pyinstaller/pyinstaller.git _pyinstaller
+          cd _pyinstaller/bootloader
+          python ./waf all
+          cd ../..
+          pip install ./_pyinstaller
 
       - name: Build executable
         run: >
@@ -60,7 +73,18 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install requests customtkinter psutil pyinstaller
+        run: pip install requests customtkinter psutil
+
+      # Same bootloader rebuild as Windows — macOS was also flagged.
+      # Xcode Command Line Tools (clang) are pre-installed on macos-latest.
+      - name: Rebuild PyInstaller bootloader
+        run: |
+          pip install pyinstaller
+          git clone --depth 1 https://github.com/pyinstaller/pyinstaller.git _pyinstaller
+          cd _pyinstaller/bootloader
+          python ./waf all
+          cd ../..
+          pip install ./_pyinstaller
 
       - name: Build executable
         run: >

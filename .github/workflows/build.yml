@@ -1,0 +1,112 @@
+name: Build & Release
+
+# Runs automatically when you push a version tag, e.g: git tag v1.0.0 && git push --tags
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+
+  # -------------------------------------------------------------------------
+  # Windows
+  # -------------------------------------------------------------------------
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests customtkinter psutil pyinstaller
+
+      - name: Build executable
+        run: >
+          pyinstaller
+          --noconsole
+          --onefile
+          --collect-all customtkinter
+          --hidden-import psutil
+          --name BetterfoxUpdater
+          gui_test.py
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BetterfoxUpdater.exe
+          generate_release_notes: true
+
+  # -------------------------------------------------------------------------
+  # macOS
+  # -------------------------------------------------------------------------
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests customtkinter psutil pyinstaller
+
+      - name: Build executable
+        run: >
+          pyinstaller
+          --noconsole
+          --onefile
+          --collect-all customtkinter
+          --hidden-import psutil
+          --name BetterfoxUpdater
+          gui_test.py
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BetterfoxUpdater
+          generate_release_notes: true
+
+  # -------------------------------------------------------------------------
+  # Linux
+  # -------------------------------------------------------------------------
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # tkinter is not bundled with Python on Ubuntu — must be installed separately
+      - name: Install tkinter
+        run: sudo apt-get install -y python3-tk
+
+      - name: Install dependencies
+        run: pip install requests customtkinter psutil pyinstaller
+
+      - name: Build executable
+        run: >
+          pyinstaller
+          --noconsole
+          --onefile
+          --collect-all customtkinter
+          --hidden-import psutil
+          --name BetterfoxUpdater-Linux
+          gui_test.py
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BetterfoxUpdater-Linux
+          generate_release_notes: true

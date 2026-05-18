@@ -6,6 +6,10 @@ on:
     tags:
       - 'v*'
 
+# Required for softprops/action-gh-release to create and upload releases
+permissions:
+  contents: write
+
 jobs:
 
   # -------------------------------------------------------------------------

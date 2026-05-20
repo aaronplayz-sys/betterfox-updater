@@ -3,6 +3,7 @@ import platform
 import configparser
 import requests
 import shutil
+import subprocess
 import sys
 import glob
 from datetime import datetime
@@ -28,6 +29,23 @@ def get_base_path() -> str:
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+def _get_linux_firefox_base() -> str | None:
+    """Finds the Firefox base directory on Linux, checking Snap and Flatpak paths too."""
+    candidates = [
+        os.path.expanduser("~/.mozilla/firefox"),                               # Traditional
+        os.path.expanduser("~/snap/firefox/common/.mozilla/firefox"),           # Ubuntu Snap
+        os.path.expanduser("~/.var/app/org.mozilla.firefox/.mozilla/firefox"),  # Flatpak
+    ]
+    for path in candidates:
+        if os.path.exists(os.path.join(path, "profiles.ini")):
+            print(f"  [profile] Found Firefox at: {path}")
+            return path
+ 
+    print("profiles.ini not found in any known location. Checked:")
+    for path in candidates:
+        print(f"  {path}")
+    return None
+
 
 def get_firefox_profile_path() -> str | None:
     """Finds the 'default-release' profile path based on the OS."""
@@ -37,7 +55,10 @@ def get_firefox_profile_path() -> str | None:
     elif system == "Darwin":
         base_path = os.path.expanduser("~/Library/Application Support/Firefox")
     else:
-        base_path = os.path.expanduser("~/.mozilla/firefox")
+        base_path = _get_linux_firefox_base()
+
+    if not base_path:
+        return None
 
     ini_path = os.path.join(base_path, "profiles.ini")
     if not os.path.exists(ini_path):

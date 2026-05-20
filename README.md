@@ -9,6 +9,7 @@ This project was inspired by [Betterfox Issue #167](https://github.com/yokoffing
 </p>
 
 ⚠️ Antivirus Notice
+
 The macOS executable may be flagged by Microsoft Defender as a false positive. This is a known issue with unsigned Python executables built with PyInstaller — the binary is not malicious. The Windows executable has been patched to avoid this. If you are concerned, you can verify the build yourself by running from source via the developer setup below, or inspect the full source code in this repo.
 
 ## ✨ Key Features

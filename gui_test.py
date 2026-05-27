@@ -2,6 +2,7 @@ import sys
 import os
 import queue
 import threading
+import tkinter.messagebox as tkmsg
 import customtkinter as ctk
 from update_betterfox import (
     is_firefox_running,
@@ -103,7 +104,7 @@ def _check_firefox_on_startup():
     elif not PSUTIL_AVAILABLE:
         firefox_banner.configure(
             text="psutil not installed — install it to enable Firefox detection",
-            text_color="red",
+            text_color="gray",
         )
 
 
@@ -125,19 +126,34 @@ def _run_update():
 
 
 def start_update():
-    log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Updating...", text_color="yellow")
-    _set_buttons("disabled")
-
-    # Refresh the running-Firefox banner each sync attempt
+    # If Firefox is running, the migration step (prefs.js cleanup) will be
+    # skipped by the backend to avoid being overwritten. Warn the user with a
+    # blocking dialog so they can close Firefox first if they want full cleanup.
     if PSUTIL_AVAILABLE and is_firefox_running():
         firefox_banner.configure(
-            text="⚠  Firefox is running — changes won't apply until it restarts",
+            text="⚠  Firefox is running — migration will be skipped",
             text_color="#FFA500",
         )
+        proceed = tkmsg.askyesno(
+            title="Firefox is Running",
+            message=(
+                "Firefox is currently open.\n\n"
+                "The migration step — which removes stale preferences left over "
+                "from previous Betterfox versions — requires Firefox to be closed. "
+                "If you continue now, that step will be skipped and your prefs.js "
+                "will not be fully cleaned up.\n\n"
+                "Close Firefox and sync again for a complete update.\n\n"
+                "Sync anyway?"
+            ),
+        )
+        if not proceed:
+            return
     else:
-        firefox_banner.configure(text="", text_color="orange")
+        firefox_banner.configure(text="", text_color="gray")
 
+    log_box.delete("0.0", "end")
+    status_label.configure(text="Status: Updating...", text_color="gray")
+    _set_buttons("disabled")
     threading.Thread(target=_run_update, daemon=True).start()
 
 
@@ -189,7 +205,7 @@ def start_restore():
         return
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Restoring...", text_color="yellow")
+    status_label.configure(text="Status: Restoring...", text_color="gray")
     _set_buttons("disabled")
     threading.Thread(target=_run_restore, args=(backup_path,), daemon=True).start()
 
@@ -223,7 +239,7 @@ firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 11))
 firefox_banner.pack(pady=(0, 4))
 
 # Status
-status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="white")
+status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="gray")
 status_label.pack(pady=(0, 8))
 
 # Sync button
@@ -231,7 +247,7 @@ sync_button = ctk.CTkButton(app, text="Sync Now", command=start_update, width=20
 sync_button.pack(pady=4)
 
 # Divider label
-ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 11)).pack(pady=(14, 4))
+ctk.CTkLabel(app, text="── Restore a backup ──", text_color="gray", font=("Arial", 11)).pack(pady=(14, 4))
 
 # Backup picker + restore button side by side
 restore_frame = ctk.CTkFrame(app, fg_color="transparent")

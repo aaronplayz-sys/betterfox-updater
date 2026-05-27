@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import glob
+import re
 from datetime import datetime
 
 try:
@@ -29,6 +30,7 @@ def get_base_path() -> str:
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+
 def _get_linux_firefox_base() -> str | None:
     """Finds the Firefox base directory on Linux, checking Snap and Flatpak paths too."""
     candidates = [
@@ -40,7 +42,7 @@ def _get_linux_firefox_base() -> str | None:
         if os.path.exists(os.path.join(path, "profiles.ini")):
             print(f"  [profile] Found Firefox at: {path}")
             return path
- 
+
     print("profiles.ini not found in any known location. Checked:")
     for path in candidates:
         print(f"  {path}")
@@ -154,6 +156,63 @@ def restore_backup(backup_path: str, profile_path: str) -> bool:
         print(f"[error] Restore failed: {e}")
         return False
 
+# ---------------------------------------------------------------------------
+# Migration — stale pref cleanup
+# ---------------------------------------------------------------------------
+
+def parse_pref_names(user_js_content: str) -> set[str]:
+    """Extracts all pref names from a user.js content string."""
+    return set(re.findall(r'user_pref\("([^"]+)"', user_js_content))
+
+
+def clean_stale_prefs(old_content: str, new_content: str, profile_path: str) -> None:
+    """Removes from prefs.js any prefs that existed in the old user.js but not the new one.
+
+    Firefox writes user.js values into prefs.js on startup but never removes them
+    when prefs are dropped from user.js. This function performs that cleanup so
+    removed prefs actually revert to Firefox defaults rather than lingering silently.
+    """
+    removed = parse_pref_names(old_content) - parse_pref_names(new_content)
+
+    if not removed:
+        print("Migration: no removed prefs to clean up.")
+        return
+
+    print(f"Migration: {len(removed)} pref(s) removed in this update.")
+
+    prefs_js_path = os.path.join(profile_path, "prefs.js")
+    if not os.path.exists(prefs_js_path):
+        print("  [warn]  prefs.js not found, skipping cleanup.")
+        return
+
+    with open(prefs_js_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    cleaned_lines = []
+    cleaned_count = 0
+    for line in lines:
+        match = re.match(r'\s*user_pref\("([^"]+)"', line)
+        if match and match.group(1) in removed:
+            print(f"  [removed] {match.group(1)}")
+            cleaned_count += 1
+        else:
+            cleaned_lines.append(line)
+
+    if cleaned_count > 0:
+        # Guard: if Firefox is running it will overwrite prefs.js on next save,
+        # undoing the cleanup entirely. Skip the write and tell the user explicitly.
+        if is_firefox_running():
+            print(f"  [warn]  {cleaned_count} stale pref(s) found but Firefox is running.")
+            print("          Close Firefox and sync again to complete the migration.")
+            return
+
+        shutil.copy2(prefs_js_path, prefs_js_path + ".backup")
+        with open(prefs_js_path, "w", encoding="utf-8") as f:
+            f.writelines(cleaned_lines)
+        print(f"  Cleaned {cleaned_count} stale pref(s) from prefs.js. (prefs.js.backup created)")
+    else:
+        print("  No stale prefs found in prefs.js.")
+
 
 # ---------------------------------------------------------------------------
 # Override loading
@@ -227,7 +286,7 @@ def main():
     user_js_content = response.text
     print("Download complete.\n")
 
-    # Append overrides
+    # Append overrides: common → OS-specific → hardware-specific
     system = platform.system()
     os_override_map = {
         "Windows": "windows-overrides.js",
@@ -239,6 +298,7 @@ def main():
     if not os_filename:
         print(f"  [warn]  Unrecognized OS '{system}', no OS-specific overrides available.")
 
+
     print("Loading overrides:")
     for filename in filter(None, ["common-overrides.js", os_filename]):
         content = fetch_override(filename, base_dir)
@@ -246,8 +306,19 @@ def main():
             user_js_content += "\n\n" + content
     print()
 
-    # Backup then write
+    # Read existing user.js for migration diff before overwriting
     target_file = os.path.join(profile_path, "user.js")
+    old_user_js_content = ""
+    if os.path.exists(target_file):
+        with open(target_file, "r", encoding="utf-8") as f:
+            old_user_js_content = f.read()
+
+    # Clean up prefs removed in this update
+    print("Running migration...")
+    clean_stale_prefs(old_user_js_content, user_js_content, profile_path)
+    print()
+
+    # Backup then write
     create_backup(target_file)
 
     with open(target_file, "w", encoding="utf-8") as f:

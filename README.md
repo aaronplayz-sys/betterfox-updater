@@ -18,7 +18,7 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 
 - **Modular Overrides**: Merges the latest Betterfox user.js with your personal tweaks (`common-overrides.js`, `windows-overrides.js`, `mac-overrides.js`, or `linux-overrides.js`). Missing override files are automatically downloaded from the repo as a fallback.
 
-- **Hardware Aware**: Tailors performance settings for specific hardware, such as Nvidia RTX GPUs or Apple Silicon (M3).
+- **Hardware Aware**: Tailors performance settings for specific hardware, such as Nvidia RTX GPUs or Apple Silicon (M3). *(To be added, further testing needed)*
 
 - **Firefox Running Detection**: Warns you if Firefox is open before syncing, so you know to restart it after the update applies.
 
@@ -26,9 +26,11 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 
 - **Modern GUI**: Includes a simple interface with a live progress log.
 
+- **Migrate prefs** Checks newer user.js from the old user.js and update prefs.js to keep in sync with the user.js
+
 ## To-do
 - [ ] Add an app icon
-- [ ] Hardware detection to match override files to detected GPU/CPU
+- [ ] Hardware detection to match override files to detected GPU/CPU (More testing needed)
 
 ## How to Use
 

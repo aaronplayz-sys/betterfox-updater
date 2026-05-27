@@ -104,7 +104,7 @@ def _check_firefox_on_startup():
     elif not PSUTIL_AVAILABLE:
         firefox_banner.configure(
             text="psutil not installed — install it to enable Firefox detection",
-            text_color="gray",
+            text_color="red",
         )
 
 
@@ -149,10 +149,10 @@ def start_update():
         if not proceed:
             return
     else:
-        firefox_banner.configure(text="", text_color="gray")
+        firefox_banner.configure(text="", text_color="yellow")
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Updating...", text_color="gray")
+    status_label.configure(text="Status: Updating...", text_color="yellow")
     _set_buttons("disabled")
     threading.Thread(target=_run_update, daemon=True).start()
 
@@ -205,7 +205,7 @@ def start_restore():
         return
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Restoring...", text_color="gray")
+    status_label.configure(text="Status: Restoring...", text_color="yellow")
     _set_buttons("disabled")
     threading.Thread(target=_run_restore, args=(backup_path,), daemon=True).start()
 
@@ -232,22 +232,22 @@ app.geometry("500x560")
 app.title("Betterfox Updater")
 
 # Title
-ctk.CTkLabel(app, text="Betterfox Sync", font=("Arial", 20)).pack(pady=(14, 4))
+ctk.CTkLabel(app, text="Betterfox Updater", font=("Arial", 20)).pack(pady=(14, 4))
 
 # Firefox running banner (hidden by default)
 firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 11))
 firefox_banner.pack(pady=(0, 4))
 
 # Status
-status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="gray")
+status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="white", font=("Arial", 12))
 status_label.pack(pady=(0, 8))
 
 # Sync button
-sync_button = ctk.CTkButton(app, text="Sync Now", command=start_update, width=200)
+sync_button = ctk.CTkButton(app, text="Update Now", command=start_update, width=200)
 sync_button.pack(pady=4)
 
 # Divider label
-ctk.CTkLabel(app, text="── Restore a backup ──", text_color="gray", font=("Arial", 11)).pack(pady=(14, 4))
+ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 11)).pack(pady=(14, 4))
 
 # Backup picker + restore button side by side
 restore_frame = ctk.CTkFrame(app, fg_color="transparent")

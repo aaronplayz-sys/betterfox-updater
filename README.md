@@ -8,7 +8,7 @@ This project was inspired by [Betterfox Issue #167](https://github.com/yokoffing
     <img src="images/BetterfoxUpdaterSucess.png" alt="Betterfox Updater Success"/>
 </p>
 
-⚠️ Antivirus Notice
+## ⚠️ Antivirus Notice
 
 The macOS executable may be flagged by Microsoft Defender as a false positive. This is a known issue with unsigned Python executables built with PyInstaller — the binary is not malicious. The Windows executable has been patched to avoid this. If you are concerned, you can verify the build yourself by running from source via the developer setup below, or inspect the full source code in this repo.
 
@@ -18,7 +18,7 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 
 - **Modular Overrides**: Merges the latest Betterfox user.js with your personal tweaks (`common-overrides.js`, `windows-overrides.js`, `mac-overrides.js`, or `linux-overrides.js`). Missing override files are automatically downloaded from the repo as a fallback.
 
-- **Hardware Aware**: Tailors performance settings for specific hardware, such as Nvidia RTX GPUs or Apple Silicon (M3). *(To be added, further testing needed)*
+- **Hardware Aware**: Automatically detects your GPU or CPU and applies the right override file. Covers NVIDIA, AMD, and Intel GPUs on Windows and Linux; Apple Silicon vs Intel on macOS.
 
 - **Firefox Running Detection**: Warns you if Firefox is open before syncing, so you know to restart it after the update applies.
 
@@ -26,22 +26,26 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 
 - **Modern GUI**: Includes a simple interface with a live progress log.
 
-- **Migrate prefs** Checks newer user.js from the old user.js and update prefs.js to keep in sync with the user.js
-
 ## To-do
-- [ ] Add an app icon
-- [ ] Add a way to select any profile instead of automatically selecting the default
-- [ ] Notify user that user.js has been updated and suggest to update
-- [ ] Hardware detection to match override files to detected GPU/CPU (More testing needed)
+- [ ] Add an app icon (Ongoing)
+- [x] Hardware detection to match override files to detected GPU/CPU (Feedback welcomed)
+- [ ] Notify user that user.js has been updated and suggest to update (To be worked on)
 
 ## How to Use
 
 1. Download the latest release for your system from the [Releases](../../releases) page.
-2. Place any override files you want to customize (`common-overrides.js`, `windows-overrides.js`, `mac-overrides.js`, `linux-overrides.js`) in the same folder as the updater. If a file isn't found locally, it will be downloaded from this repo automatically.
+2. Place any override files you want to customize in the same folder as the updater. If a file isn't found locally, it will be downloaded automatically.
+
+   | File | Applied when |
+   |---|---|
+   | `common-overrides.js` | Always |
+   | `windows-overrides.js` / `mac-overrides.js` / `linux-overrides.js` | Matches your OS |
+   | `nvidia-overrides.js` / `amd-overrides.js` / `intel-gpu-overrides.js` | Matches your GPU (Windows / Linux) |
+   | `apple-silicon-overrides.js` / `apple-intel-overrides.js` | Matches your Mac chip (macOS) |
 3. Run the application and click **Sync Now**.
 4. Restart Firefox to apply changes.
 
-To roll back a sync, select a backup from the **Restore a backup** dropdown and click **Restore**, then restart Firefox. Up to five backups are saved.
+To roll back a sync, select a backup from the **Restore a backup** dropdown and click **Restore**, then restart Firefox.
 
 ## 🛠 Developer Setup
 
@@ -71,7 +75,7 @@ pip install requests customtkinter psutil
 
 CLI: `python update_betterfox.py`
 
-GUI: `python gui_test.py`
+GUI: `python app.py`
 
 ## 🔨 Building the Executable
 
@@ -81,7 +85,7 @@ Releases are built automatically via GitHub Actions when a version tag is pushed
 pip install pyinstaller
 ```
 ```
-pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import psutil --name BetterfoxUpdater gui_test.py
+pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import psutil --name BetterfoxUpdater app.py
 ```
 
 > **Linux only**: tkinter must be installed separately before building.

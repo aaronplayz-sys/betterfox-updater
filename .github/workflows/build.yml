@@ -50,7 +50,7 @@ jobs:
           --collect-all customtkinter
           --hidden-import psutil
           --name BetterfoxUpdater
-          gui_test.py
+          app.py
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -94,7 +94,7 @@ jobs:
           --collect-all customtkinter
           --hidden-import psutil
           --name BetterfoxUpdater
-          gui_test.py
+          app.py
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -131,7 +131,7 @@ jobs:
           --collect-all customtkinter
           --hidden-import psutil
           --name BetterfoxUpdater-Linux
-          gui_test.py
+          app.py
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

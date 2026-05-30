@@ -94,6 +94,50 @@ def get_firefox_profile_path() -> str | None:
     return profile_path
 
 
+def get_all_profiles() -> list[dict]:
+    """Returns all Firefox profiles as a list of {name, path, is_default} dicts.
+
+    Sorted with the default profile first, then alphabetically by name.
+    """
+    system = platform.system()
+    if system == "Windows":
+        base_path = os.path.expandvars(r"%APPDATA%\Mozilla\Firefox")
+    elif system == "Darwin":
+        base_path = os.path.expanduser("~/Library/Application Support/Firefox")
+    else:
+        base_path = _get_linux_firefox_base()
+
+    if not base_path:
+        return []
+
+    ini_path = os.path.join(base_path, "profiles.ini")
+    if not os.path.exists(ini_path):
+        return []
+
+    config = configparser.ConfigParser()
+    config.read(ini_path, encoding="utf-8")
+
+    profiles = []
+    for section in config.sections():
+        if not section.startswith("Profile"):
+            continue
+        name = config.get(section, "Name", fallback="")
+        path = config.get(section, "Path", fallback="")
+        if not name or not path:
+            continue
+        is_relative  = config.get(section, "IsRelative", fallback="1")
+        is_default   = (
+            config.get(section, "Default", fallback="0") == "1"
+            or name == "default-release"
+        )
+        full_path = os.path.join(base_path, path) if is_relative == "1" else path
+        profiles.append({"name": name, "path": full_path, "is_default": is_default})
+
+    # Default profile first, then alphabetical
+    profiles.sort(key=lambda p: (not p["is_default"], p["name"]))
+    return profiles
+
+
 # ---------------------------------------------------------------------------
 # Firefox process detection
 # ---------------------------------------------------------------------------
@@ -155,6 +199,75 @@ def restore_backup(backup_path: str, profile_path: str) -> bool:
     except OSError as e:
         print(f"[error] Restore failed: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Hardware detection
+# ---------------------------------------------------------------------------
+
+def _detect_windows_gpu() -> str | None:
+    """Returns a hardware override filename based on the detected Windows GPU."""
+    try:
+        result = subprocess.run(
+            ['powershell', '-Command',
+             'Get-WmiObject Win32_VideoController | Select-Object -ExpandProperty Name'],
+            capture_output=True, text=True, timeout=10
+        )
+        name = result.stdout.upper()
+        if 'NVIDIA' in name:
+            return 'nvidia-overrides.js'
+        if 'AMD' in name or 'RADEON' in name:
+            return 'amd-overrides.js'
+        if 'INTEL' in name:
+            return 'intel-gpu-overrides.js'
+    except Exception as e:
+        print(f"  [warn]  GPU detection failed: {e}")
+    return None
+
+
+def _detect_linux_gpu() -> str | None:
+    """Returns a hardware override filename based on the detected Linux GPU."""
+    try:
+        result = subprocess.run(
+            ['lspci'], capture_output=True, text=True, timeout=10
+        )
+        for line in result.stdout.upper().splitlines():
+            if 'VGA' in line or '3D CONTROLLER' in line or 'DISPLAY' in line:
+                if 'NVIDIA' in line:
+                    return 'nvidia-overrides.js'
+                if 'AMD' in line or 'RADEON' in line or 'ATI' in line:
+                    return 'amd-overrides.js'
+                if 'INTEL' in line:
+                    return 'intel-gpu-overrides.js'
+    except FileNotFoundError:
+        print("  [warn]  lspci not found — install pciutils for GPU detection.")
+    except Exception as e:
+        print(f"  [warn]  GPU detection failed: {e}")
+    return None
+
+
+def get_hardware_override_filename() -> str | None:
+    """Detects the current GPU/CPU and returns the appropriate override filename.
+
+    macOS uses platform.machine() to distinguish Apple Silicon from Intel.
+    Windows queries Win32_VideoController via PowerShell.
+    Linux parses lspci output (requires pciutils).
+    Returns None if detection fails or hardware is unrecognized.
+    """
+    system = platform.system()
+
+    if system == 'Darwin':
+        # arm64 = Apple Silicon (M1/M2/M3+), x86_64 = Intel Mac
+        return 'apple-silicon-overrides.js' if platform.machine() == 'arm64' else 'apple-intel-overrides.js'
+
+    if system == 'Windows':
+        return _detect_windows_gpu()
+
+    if system == 'Linux':
+        return _detect_linux_gpu()
+
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Migration — stale pref cleanup
@@ -250,7 +363,7 @@ def fetch_override(filename: str, base_dir: str) -> str | None:
 # Main sync logic
 # ---------------------------------------------------------------------------
 
-def main():
+def main(profile_path: str | None = None):
     base_dir = get_base_path()
 
     # Firefox running check
@@ -261,8 +374,9 @@ def main():
         print("[warn] psutil not installed — cannot check if Firefox is running.")
         print("       Run: pip install psutil\n")
 
-    # Profile detection
-    profile_path = get_firefox_profile_path()
+    # Profile detection — use provided path or auto-detect
+    if not profile_path:
+        profile_path = get_firefox_profile_path()
     if not profile_path:
         print("Could not locate default Firefox profile.")
         return
@@ -298,9 +412,16 @@ def main():
     if not os_filename:
         print(f"  [warn]  Unrecognized OS '{system}', no OS-specific overrides available.")
 
+    print("Detecting hardware...")
+    hw_filename = get_hardware_override_filename()
+    if hw_filename:
+        print(f"  [hw]     {hw_filename}")
+    else:
+        print("  [warn]  Could not identify hardware, skipping hardware overrides.")
+    print()
 
     print("Loading overrides:")
-    for filename in filter(None, ["common-overrides.js", os_filename]):
+    for filename in filter(None, ["common-overrides.js", os_filename, hw_filename]):
         content = fetch_override(filename, base_dir)
         if content:
             user_js_content += "\n\n" + content

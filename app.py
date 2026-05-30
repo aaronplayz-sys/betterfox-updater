@@ -1,9 +1,11 @@
 import sys
 import os
+import ctypes
 import queue
 import threading
 import tkinter.messagebox as tkmsg
 import customtkinter as ctk
+from PIL import Image, ImageTk
 from update_betterfox import (
     is_firefox_running,
     PSUTIL_AVAILABLE,
@@ -146,7 +148,7 @@ def _check_firefox_on_startup():
     elif not PSUTIL_AVAILABLE:
         firefox_banner.configure(
             text="psutil not installed — install it to enable Firefox detection",
-            text_color="gray",
+            text_color="orange",
         )
 
 
@@ -193,10 +195,10 @@ def start_update():
         if not proceed:
             return
     else:
-        firefox_banner.configure(text="", text_color="gray")
+        firefox_banner.configure(text="", text_color="yellow")
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Updating...", text_color="gray")
+    status_label.configure(text="Status: Updating...", text_color="blue")
     _set_buttons("disabled")
     threading.Thread(target=_run_update, args=(profile["path"],), daemon=True).start()
 
@@ -244,7 +246,7 @@ def start_restore():
         return
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Restoring...", text_color="gray")
+    status_label.configure(text="Status: Restoring...", text_color="blue")
     _set_buttons("disabled")
     threading.Thread(
         target=_run_restore, args=(backup_path, profile["path"]), daemon=True
@@ -264,11 +266,61 @@ def _on_failure():
     _set_buttons("normal")
 
 
+
+# ---------------------------------------------------------------------------
+# Window icon
+# ---------------------------------------------------------------------------
+
+def _set_window_icon():
+    """Sets the window icon cross-platform.
+
+    Looks in sys._MEIPASS first (PyInstaller --onefile bundle), then falls
+    back to the local assets/ folder for dev runs. Never crashes — icon is
+    cosmetic and should never block startup.
+    """
+    import platform as _platform
+
+    def _find(filename: str) -> str | None:
+        # Frozen: files bundled via --add-data land in sys._MEIPASS
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            p = os.path.join(meipass, filename)
+            if os.path.exists(p):
+                return p
+        # Dev: look in assets/ next to this script
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", filename)
+        return p if os.path.exists(p) else None
+
+    try:
+        if _platform.system() == "Windows":
+            # Tell Windows this is its own app so the taskbar shows our
+            # icon instead of the generic Python one
+            try:
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    "BetterfoxUpdater"
+                )
+            except Exception:
+                pass
+            path = _find("favicon.ico")
+            if path:
+                app.iconbitmap(path)
+        else:
+            path = _find("AppIcon1024.png")
+            if path:
+                img   = Image.open(path).resize((64, 64), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                app.iconphoto(True, photo)
+                app._icon_ref = photo  # prevent garbage collection
+    except Exception:
+        pass  # never crash over a missing icon
+
+
 # ---------------------------------------------------------------------------
 # GUI layout
 # ---------------------------------------------------------------------------
 
 app = ctk.CTk()
+_set_window_icon()
 app.geometry("500x600")
 app.title("Betterfox Updater")
 
@@ -293,7 +345,7 @@ profile_menu = ctk.CTkOptionMenu(
 profile_menu.pack(side="left")
 
 # Status
-status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="gray")
+status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="white")
 status_label.pack(pady=(8, 4))
 
 # Update button
@@ -301,7 +353,7 @@ update_button = ctk.CTkButton(app, text="Update Now", command=start_update, widt
 update_button.pack(pady=4)
 
 # Restore section
-ctk.CTkLabel(app, text="── Restore a backup ──", text_color="gray", font=("Arial", 11)).pack(pady=(14, 4))
+ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 11)).pack(pady=(14, 4))
 
 restore_frame = ctk.CTkFrame(app, fg_color="transparent")
 restore_frame.pack(pady=4)

@@ -7,7 +7,7 @@ import customtkinter as ctk
 from update_betterfox import (
     is_firefox_running,
     PSUTIL_AVAILABLE,
-    get_firefox_profile_path,
+    get_all_profiles,
     list_backups,
     restore_backup,
     main as run_update_logic,
@@ -35,7 +35,7 @@ log_queue: queue.Queue = queue.Queue()
 
 
 # ---------------------------------------------------------------------------
-# Queue poller — drains log_queue into the textbox on the main thread
+# Queue poller
 # ---------------------------------------------------------------------------
 
 def _poll_queue():
@@ -50,18 +50,58 @@ def _poll_queue():
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Profile picker helpers
 # ---------------------------------------------------------------------------
 
-def _set_buttons(state: str):
-    sync_button.configure(state=state)
-    restore_button.configure(state=state)
+# Parallel lists: labels shown in the dropdown <-> full profile dicts
+profile_list:  list[dict] = []
+backup_paths:  list[str]  = []
 
+
+def _load_profiles():
+    """Populates profile_list and the profile dropdown on startup."""
+    profiles = get_all_profiles()
+    profile_list.clear()
+    profile_list.extend(profiles)
+
+    if not profiles:
+        profile_menu.configure(values=["No profiles found"], state="disabled")
+        profile_menu.set("No profiles found")
+        return
+
+    labels = [
+        f"{p['name']}  (default)" if p["is_default"] else p["name"]
+        for p in profiles
+    ]
+    profile_menu.configure(values=labels, state="normal")
+    profile_menu.set(labels[0])
+
+
+def _get_selected_profile() -> dict | None:
+    """Returns the profile dict for the currently selected dropdown entry."""
+    label  = profile_menu.get()
+    labels = [
+        f"{p['name']}  (default)" if p["is_default"] else p["name"]
+        for p in profile_list
+    ]
+    try:
+        return profile_list[labels.index(label)]
+    except ValueError:
+        return None
+
+
+def _on_profile_change(_choice: str):
+    """Called when the user picks a different profile — refreshes the backup list."""
+    _refresh_backup_menu()
+
+
+# ---------------------------------------------------------------------------
+# Backup menu helpers
+# ---------------------------------------------------------------------------
 
 def _friendly_backup_name(path: str) -> str:
-    """Converts a full backup path to a readable label, e.g. '2025-06-14  14:30:05'."""
-    name = os.path.basename(path)          # user.js.backup.20250614-143005
-    stamp = name.split(".backup.")[-1]     # 20250614-143005
+    name  = os.path.basename(path)
+    stamp = name.split(".backup.")[-1]
     try:
         dt = __import__("datetime").datetime.strptime(stamp, "%Y%m%d-%H%M%S")
         return dt.strftime("%Y-%m-%d  %H:%M:%S")
@@ -70,54 +110,56 @@ def _friendly_backup_name(path: str) -> str:
 
 
 def _refresh_backup_menu():
-    """Repopulates the restore dropdown with current backups."""
-    profile_path = get_firefox_profile_path()
-    backups = list_backups(profile_path) if profile_path else []
+    profile = _get_selected_profile()
+    backups = list_backups(profile["path"]) if profile else []
 
     backup_paths.clear()
     backup_paths.extend(backups)
 
     if backups:
         labels = [_friendly_backup_name(p) for p in backups]
-        restore_menu.configure(values=labels)
+        restore_menu.configure(values=labels, state="normal")
         restore_menu.set(labels[0])
         restore_button.configure(state="normal")
-        restore_menu.configure(state="normal")
     else:
-        restore_menu.configure(values=["No backups found"])
+        restore_menu.configure(values=["No backups found"], state="disabled")
         restore_menu.set("No backups found")
         restore_button.configure(state="disabled")
-        restore_menu.configure(state="disabled")
 
 
 # ---------------------------------------------------------------------------
-# Firefox running banner
+# Shared UI helpers
 # ---------------------------------------------------------------------------
+
+def _set_buttons(state: str):
+    update_button.configure(state=state)
+    restore_button.configure(state=state)
+    profile_menu.configure(state="disabled" if state == "disabled" else "normal")
+
 
 def _check_firefox_on_startup():
-    """Shows a warning banner if Firefox is already open when the app launches."""
     if PSUTIL_AVAILABLE and is_firefox_running():
         firefox_banner.configure(
-            text="⚠  Firefox is running — changes won't apply until it restarts",
+            text="⚠  Firefox is running — migration will be skipped if you update now",
             text_color="#FFA500",
         )
     elif not PSUTIL_AVAILABLE:
         firefox_banner.configure(
             text="psutil not installed — install it to enable Firefox detection",
-            text_color="red",
+            text_color="gray",
         )
 
 
 # ---------------------------------------------------------------------------
-# Sync worker
+# Update worker
 # ---------------------------------------------------------------------------
 
-def _run_update():
+def _run_update(profile_path: str):
     old_stdout = sys.stdout
     sys.stdout = QueueStream(log_queue)
     try:
-        run_update_logic()
-        app.after(0, _on_sync_success)
+        run_update_logic(profile_path=profile_path)
+        app.after(0, _on_update_success)
     except Exception as e:
         log_queue.put(f"\n[ERROR]: {e}\n")
         app.after(0, _on_failure)
@@ -126,9 +168,11 @@ def _run_update():
 
 
 def start_update():
-    # If Firefox is running, the migration step (prefs.js cleanup) will be
-    # skipped by the backend to avoid being overwritten. Warn the user with a
-    # blocking dialog so they can close Firefox first if they want full cleanup.
+    profile = _get_selected_profile()
+    if not profile:
+        tkmsg.showerror("No Profile", "No Firefox profile selected.")
+        return
+
     if PSUTIL_AVAILABLE and is_firefox_running():
         firefox_banner.configure(
             text="⚠  Firefox is running — migration will be skipped",
@@ -142,22 +186,22 @@ def start_update():
                 "from previous Betterfox versions — requires Firefox to be closed. "
                 "If you continue now, that step will be skipped and your prefs.js "
                 "will not be fully cleaned up.\n\n"
-                "Close Firefox and sync again for a complete update.\n\n"
-                "Sync anyway?"
+                "Close Firefox and update again for a complete update.\n\n"
+                "Update anyway?"
             ),
         )
         if not proceed:
             return
     else:
-        firefox_banner.configure(text="", text_color="yellow")
+        firefox_banner.configure(text="", text_color="gray")
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Updating...", text_color="yellow")
+    status_label.configure(text="Status: Updating...", text_color="gray")
     _set_buttons("disabled")
-    threading.Thread(target=_run_update, daemon=True).start()
+    threading.Thread(target=_run_update, args=(profile["path"],), daemon=True).start()
 
 
-def _on_sync_success():
+def _on_update_success():
     status_label.configure(text="SUCCESS: PLEASE RESTART FIREFOX", text_color="#50C878")
     log_queue.put("\n" + "=" * 30 + "\n")
     log_queue.put("Restart Firefox to apply changes.\n")
@@ -170,20 +214,12 @@ def _on_sync_success():
 # Restore worker
 # ---------------------------------------------------------------------------
 
-def _run_restore(backup_path: str):
+def _run_restore(backup_path: str, profile_path: str):
     old_stdout = sys.stdout
     sys.stdout = QueueStream(log_queue)
     try:
-        profile_path = get_firefox_profile_path()
-        if not profile_path:
-            log_queue.put("[error] Could not locate Firefox profile.\n")
-            app.after(0, _on_failure)
-            return
         success = restore_backup(backup_path, profile_path)
-        if success:
-            app.after(0, _on_restore_success)
-        else:
-            app.after(0, _on_failure)
+        app.after(0, _on_restore_success if success else _on_failure)
     except Exception as e:
         log_queue.put(f"\n[ERROR]: {e}\n")
         app.after(0, _on_failure)
@@ -192,22 +228,27 @@ def _run_restore(backup_path: str):
 
 
 def start_restore():
+    profile = _get_selected_profile()
+    if not profile:
+        tkmsg.showerror("No Profile", "No Firefox profile selected.")
+        return
+
     selected_label = restore_menu.get()
     if not backup_paths or selected_label in ("No backups found", ""):
         return
 
-    # Match the selected label back to its path
     labels = [_friendly_backup_name(p) for p in backup_paths]
     try:
-        idx = labels.index(selected_label)
-        backup_path = backup_paths[idx]
+        backup_path = backup_paths[labels.index(selected_label)]
     except ValueError:
         return
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Restoring...", text_color="yellow")
+    status_label.configure(text="Status: Restoring...", text_color="gray")
     _set_buttons("disabled")
-    threading.Thread(target=_run_restore, args=(backup_path,), daemon=True).start()
+    threading.Thread(
+        target=_run_restore, args=(backup_path, profile["path"]), daemon=True
+    ).start()
 
 
 def _on_restore_success():
@@ -228,32 +269,42 @@ def _on_failure():
 # ---------------------------------------------------------------------------
 
 app = ctk.CTk()
-app.geometry("500x560")
+app.geometry("500x600")
 app.title("Betterfox Updater")
 
 # Title
 ctk.CTkLabel(app, text="Betterfox Updater", font=("Arial", 20)).pack(pady=(14, 4))
 
-# Firefox running banner (hidden by default)
+# Firefox running banner
 firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 11))
 firefox_banner.pack(pady=(0, 4))
 
+# Profile picker
+profile_frame = ctk.CTkFrame(app, fg_color="transparent")
+profile_frame.pack(pady=(4, 2))
+
+ctk.CTkLabel(profile_frame, text="Profile:", font=("Arial", 12)).pack(side="left", padx=(0, 8))
+profile_menu = ctk.CTkOptionMenu(
+    profile_frame,
+    values=["Loading..."],
+    command=_on_profile_change,
+    width=300,
+)
+profile_menu.pack(side="left")
+
 # Status
-status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="white", font=("Arial", 12))
-status_label.pack(pady=(0, 8))
+status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="gray")
+status_label.pack(pady=(8, 4))
 
-# Sync button
-sync_button = ctk.CTkButton(app, text="Update Now", command=start_update, width=200)
-sync_button.pack(pady=4)
+# Update button
+update_button = ctk.CTkButton(app, text="Update Now", command=start_update, width=200)
+update_button.pack(pady=4)
 
-# Divider label
-ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 11)).pack(pady=(14, 4))
+# Restore section
+ctk.CTkLabel(app, text="── Restore a backup ──", text_color="gray", font=("Arial", 11)).pack(pady=(14, 4))
 
-# Backup picker + restore button side by side
 restore_frame = ctk.CTkFrame(app, fg_color="transparent")
 restore_frame.pack(pady=4)
-
-backup_paths: list[str] = []  # parallel list to the dropdown labels
 
 restore_menu = ctk.CTkOptionMenu(restore_frame, values=["No backups found"], width=260)
 restore_menu.pack(side="left", padx=(0, 8))
@@ -273,5 +324,6 @@ log_box.pack(pady=16, padx=20)
 
 app.after(100, _poll_queue)
 app.after(150, _check_firefox_on_startup)
-app.after(200, _refresh_backup_menu)
+app.after(200, _load_profiles)
+app.after(300, _refresh_backup_menu)
 app.mainloop()

@@ -27,8 +27,8 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - **Modern GUI**: Includes a simple interface with a live progress log.
 
 ## To-do
-- [ ] Add an app icon (Ongoing)
-- [x] Hardware detection to match override files to detected GPU/CPU (Feedback welcomed)
+- [ ] Add an app icon
+- [x] Hardware detection to match override files to detected GPU/CPU
 - [ ] Notify user that user.js has been updated and suggest to update (To be worked on)
 
 ## How to Use
@@ -66,7 +66,7 @@ macOS / Linux: `source .venv/bin/activate`
 
 **3. Install dependencies**
 ```
-pip install requests customtkinter psutil
+pip install -r requirements.txt
 ```
 
 > `psutil` is optional but recommended — it enables Firefox running detection. The app works without it.
@@ -85,7 +85,7 @@ Releases are built automatically via GitHub Actions when a version tag is pushed
 pip install pyinstaller
 ```
 ```
-pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import psutil --name BetterfoxUpdater app.py
+pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import psutil --icon assets/favicon.ico --add-data "assets/favicon.ico;." --name BetterfoxUpdater app.py
 ```
 
 > **Linux only**: tkinter must be installed separately before building.

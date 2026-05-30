@@ -27,7 +27,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install requests customtkinter psutil
+        run: pip install -r requirements.txt
 
       # Rebuild the bootloader from source to avoid AV false positives.
       # The default PyInstaller bootloader has a known binary signature that
@@ -49,6 +49,8 @@ jobs:
           --onefile
           --collect-all customtkinter
           --hidden-import psutil
+          --icon assets/favicon.ico
+          --add-data "assets/favicon.ico;."
           --name BetterfoxUpdater
           app.py
 
@@ -73,7 +75,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install requests customtkinter psutil
+        run: pip install -r requirements.txt
 
       # Same bootloader rebuild as Windows — macOS was also flagged.
       # Xcode Command Line Tools (clang) are pre-installed on macos-latest.
@@ -86,6 +88,22 @@ jobs:
           cd ../..
           pip install ./_pyinstaller
 
+      # Convert the 1024px PNG to .icns using sips + iconutil (built into macOS)
+      - name: Convert PNG to icns
+        run: |
+          mkdir AppIcon.iconset
+          sips -z 16   16   assets/AppIcon1024.png --out AppIcon.iconset/icon_16x16.png
+          sips -z 32   32   assets/AppIcon1024.png --out AppIcon.iconset/icon_16x16@2x.png
+          sips -z 32   32   assets/AppIcon1024.png --out AppIcon.iconset/icon_32x32.png
+          sips -z 64   64   assets/AppIcon1024.png --out AppIcon.iconset/icon_32x32@2x.png
+          sips -z 128  128  assets/AppIcon1024.png --out AppIcon.iconset/icon_128x128.png
+          sips -z 256  256  assets/AppIcon1024.png --out AppIcon.iconset/icon_128x128@2x.png
+          sips -z 256  256  assets/AppIcon1024.png --out AppIcon.iconset/icon_256x256.png
+          sips -z 512  512  assets/AppIcon1024.png --out AppIcon.iconset/icon_256x256@2x.png
+          sips -z 512  512  assets/AppIcon1024.png --out AppIcon.iconset/icon_512x512.png
+          sips -z 1024 1024 assets/AppIcon1024.png --out AppIcon.iconset/icon_512x512@2x.png
+          iconutil -c icns AppIcon.iconset --output assets/AppIcon.icns
+
       - name: Build executable
         run: >
           pyinstaller
@@ -93,6 +111,8 @@ jobs:
           --onefile
           --collect-all customtkinter
           --hidden-import psutil
+          --icon assets/AppIcon.icns
+          --add-data "assets/AppIcon1024.png:."
           --name BetterfoxUpdater
           app.py
 
@@ -121,7 +141,7 @@ jobs:
         run: sudo apt-get install -y python3-tk
 
       - name: Install dependencies
-        run: pip install requests customtkinter psutil pyinstaller
+        run: pip install -r requirements.txt pyinstaller
 
       - name: Build executable
         run: >
@@ -130,6 +150,8 @@ jobs:
           --onefile
           --collect-all customtkinter
           --hidden-import psutil
+          --icon assets/AppIcon1024.png
+          --add-data "assets/AppIcon1024.png:."
           --name BetterfoxUpdater-Linux
           app.py
 

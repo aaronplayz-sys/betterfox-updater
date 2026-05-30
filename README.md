@@ -27,7 +27,7 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - **Modern GUI**: Includes a simple interface with a live progress log.
 
 ## To-do
-- [ ] Add an app icon
+- [x] Add an app icon
 - [x] Hardware detection to match override files to detected GPU/CPU
 - [ ] Notify user that user.js has been updated and suggest to update (To be worked on)
 

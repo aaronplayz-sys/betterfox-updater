@@ -9,7 +9,10 @@ from PIL import Image, ImageTk
 from update_betterfox import (
     is_firefox_running,
     PSUTIL_AVAILABLE,
+    get_base_path,
     get_all_profiles,
+    get_installed_version,
+    get_latest_version,
     list_backups,
     restore_backup,
     main as run_update_logic,
@@ -95,6 +98,51 @@ def _get_selected_profile() -> dict | None:
 def _on_profile_change(_choice: str):
     """Called when the user picks a different profile — refreshes the backup list."""
     _refresh_backup_menu()
+    _start_version_check()
+# ---------------------------------------------------------------------------
+# Version check
+# ---------------------------------------------------------------------------
+
+def _run_version_check():
+    """Runs in a background thread — fetches latest version and compares to installed."""
+    app.after(0, lambda: version_label.configure(
+        text="Checking for updates...", text_color="gray"
+    ))
+
+    installed = get_installed_version(get_base_path())
+    latest    = get_latest_version()
+
+    def _update():
+        if not installed and not latest:
+            version_label.configure(text="Could not check version", text_color="gray")
+        elif not installed:
+            version_label.configure(
+                text=f"Betterfox not yet installed  (latest: v{latest})",
+                text_color="gray",
+            )
+        elif not latest:
+            version_label.configure(
+                text=f"Installed: v{installed}  (could not fetch latest)",
+                text_color="gray",
+            )
+        elif installed == latest:
+            version_label.configure(
+                text=f"Up to date: v{installed} ✓",
+                text_color="#50C878",
+            )
+        else:
+            version_label.configure(
+                text=f"v{installed} installed  →  v{latest} available",
+                text_color="#FFA500",
+            )
+
+    app.after(0, _update)
+
+
+def _start_version_check():
+    threading.Thread(target=_run_version_check, daemon=True).start()
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +258,7 @@ def _on_update_success():
     log_queue.put("=" * 30 + "\n")
     _set_buttons("normal")
     _refresh_backup_menu()
+    _start_version_check()
 
 
 # ---------------------------------------------------------------------------
@@ -321,21 +370,25 @@ def _set_window_icon():
 
 app = ctk.CTk()
 _set_window_icon()
-app.geometry("500x600")
+app.geometry("500x620")
 app.title("Betterfox Updater")
 
 # Title
 ctk.CTkLabel(app, text="Betterfox Updater", font=("Arial", 20)).pack(pady=(14, 4))
 
 # Firefox running banner
-firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 11))
+firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 13))
 firefox_banner.pack(pady=(0, 4))
+
+# Version status
+version_label = ctk.CTkLabel(app, text="", font=("Arial", 13))
+version_label.pack(pady=(0, 4))
 
 # Profile picker
 profile_frame = ctk.CTkFrame(app, fg_color="transparent")
 profile_frame.pack(pady=(4, 2))
 
-ctk.CTkLabel(profile_frame, text="Profile:", font=("Arial", 12)).pack(side="left", padx=(0, 8))
+ctk.CTkLabel(profile_frame, text="Profile:", font=("Arial", 13)).pack(side="left", padx=(0, 8))
 profile_menu = ctk.CTkOptionMenu(
     profile_frame,
     values=["Loading..."],
@@ -353,7 +406,7 @@ update_button = ctk.CTkButton(app, text="Update Now", command=start_update, widt
 update_button.pack(pady=4)
 
 # Restore section
-ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 11)).pack(pady=(14, 4))
+ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 13)).pack(pady=(14, 4))
 
 restore_frame = ctk.CTkFrame(app, fg_color="transparent")
 restore_frame.pack(pady=4)
@@ -378,4 +431,5 @@ app.after(100, _poll_queue)
 app.after(150, _check_firefox_on_startup)
 app.after(200, _load_profiles)
 app.after(300, _refresh_backup_menu)
+app.after(400, _start_version_check)
 app.mainloop()

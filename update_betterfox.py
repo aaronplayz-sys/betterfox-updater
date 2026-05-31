@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import glob
+import json
 import re
 from datetime import datetime
 
@@ -16,7 +17,9 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 BETTERFOX_URL     = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
-OVERRIDE_BASE_URL = "https://raw.githubusercontent.com/aaronplayz-sys/betterfox-updater/main/"
+OVERRIDE_BASE_URL   = "https://raw.githubusercontent.com/aaronplayz-sys/betterfox-updater/main/"
+BETTERFOX_API       = "https://api.github.com/repos/yokoffing/Betterfox/releases/latest"
+VERSION_CACHE_FILE  = "betterfox_version.json"
 MAX_BACKUPS       = 5  # How many timestamped backups to keep per profile
 
 
@@ -328,6 +331,49 @@ def clean_stale_prefs(old_content: str, new_content: str, profile_path: str) -> 
 
 
 # ---------------------------------------------------------------------------
+# Version tracking
+# ---------------------------------------------------------------------------
+
+def get_latest_version() -> str | None:
+    """Returns the latest Betterfox release tag from the GitHub Releases API.
+
+    Betterfox does not embed a version number in user.js itself, so the
+    Releases API is the authoritative source. Returns a clean string like
+    "133.0" (leading "v" stripped) or None on failure.
+    """
+    try:
+        response = requests.get(BETTERFOX_API, timeout=10)
+        if response.status_code == 200:
+            tag = response.json().get("tag_name", "")
+            return tag.lstrip("v") if tag else None
+    except requests.exceptions.RequestException:
+        pass
+    return None
+
+
+def get_installed_version(base_dir: str) -> str | None:
+    """Reads the Betterfox version saved after the last successful sync."""
+    cache_path = os.path.join(base_dir, VERSION_CACHE_FILE)
+    if not os.path.exists(cache_path):
+        return None
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            return json.load(f).get("version")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def save_installed_version(base_dir: str, version: str) -> None:
+    """Writes the installed version to the cache file after a successful sync."""
+    cache_path = os.path.join(base_dir, VERSION_CACHE_FILE)
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump({"version": version}, f)
+    except OSError as e:
+        print(f"  [warn]  Could not save version cache: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Override loading
 # ---------------------------------------------------------------------------
 
@@ -398,7 +444,19 @@ def main(profile_path: str | None = None):
         return
 
     user_js_content = response.text
-    print("Download complete.\n")
+
+    # Version comparison
+    latest_version    = get_latest_version()
+    installed_version = get_installed_version(base_dir)
+
+    if latest_version and installed_version:
+        if latest_version == installed_version:
+            print(f"Version: up to date (v{latest_version})")
+        else:
+            print(f"Version: v{installed_version} → v{latest_version}")
+    elif latest_version:
+        print(f"Version: installing v{latest_version} for the first time")
+    print()
 
     # Append overrides: common → OS-specific → hardware-specific
     system = platform.system()
@@ -445,7 +503,11 @@ def main(profile_path: str | None = None):
     with open(target_file, "w", encoding="utf-8") as f:
         f.write(user_js_content)
 
-    print("\nSuccessfully updated user.js! Restart Firefox to apply changes.")
+    if latest_version:
+        save_installed_version(base_dir, latest_version)
+        print(f"\nSuccessfully updated to v{latest_version}! Restart Firefox to apply changes.")
+    else:
+        print("\nSuccessfully updated user.js! Restart Firefox to apply changes.")
 
 
 if __name__ == "__main__":

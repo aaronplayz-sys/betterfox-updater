@@ -29,7 +29,8 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 ## To-do
 - [x] Add an app icon
 - [x] Hardware detection to match override files to detected GPU/CPU
-- [ ] Notify user that user.js has been updated and suggest to update (To be worked on)
+- [x] Notify user that user.js has been updated and suggest to update
+- [ ] Notify user that the app has been updated and suggest to update
 
 ## How to Use
 

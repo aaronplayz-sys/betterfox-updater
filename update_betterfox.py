@@ -19,6 +19,7 @@ except ImportError:
 BETTERFOX_URL     = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
 OVERRIDE_BASE_URL   = "https://raw.githubusercontent.com/aaronplayz-sys/betterfox-updater/main/"
 BETTERFOX_API       = "https://api.github.com/repos/yokoffing/Betterfox/releases/latest"
+APP_RELEASES_API    = "https://api.github.com/repos/aaronplayz-sys/betterfox-updater/releases/latest"
 VERSION_CACHE_FILE  = "betterfox_version.json"
 MAX_BACKUPS       = 5  # How many timestamped backups to keep per profile
 
@@ -371,6 +372,18 @@ def save_installed_version(base_dir: str, version: str) -> None:
             json.dump({"version": version}, f)
     except OSError as e:
         print(f"  [warn]  Could not save version cache: {e}")
+
+
+def get_latest_app_version() -> str | None:
+    """Returns the latest Betterfox Updater release tag from the GitHub Releases API."""
+    try:
+        response = requests.get(APP_RELEASES_API, timeout=10)
+        if response.status_code == 200:
+            tag = response.json().get("tag_name", "")
+            return tag.lstrip("v") if tag else None
+    except requests.exceptions.RequestException:
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------

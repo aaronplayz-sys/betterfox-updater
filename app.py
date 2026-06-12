@@ -3,6 +3,7 @@ import os
 import ctypes
 import queue
 import threading
+import webbrowser
 import tkinter.messagebox as tkmsg
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -11,6 +12,7 @@ from update_betterfox import (
     PSUTIL_AVAILABLE,
     get_base_path,
     get_all_profiles,
+    get_latest_app_version,
     get_installed_version,
     get_latest_version,
     list_backups,
@@ -18,6 +20,9 @@ from update_betterfox import (
     main as run_update_logic,
 )
 
+
+APP_VERSION = "1.5.0"
+RELEASES_URL  = "https://github.com/aaronplayz-sys/betterfox-updater/releases"
 
 # ---------------------------------------------------------------------------
 # Thread-safe stdout bridge
@@ -201,6 +206,30 @@ def _check_firefox_on_startup():
 
 
 # ---------------------------------------------------------------------------
+# Self-update check
+# ---------------------------------------------------------------------------
+def _run_app_update_check():
+    """Checks GitHub for a newer release of this updater app."""
+    latest = get_latest_app_version()
+    if not latest:
+        return
+    
+    if latest != APP_VERSION:
+        app.after(0, lambda: _show_app_update_banner(latest))
+
+
+def _show_app_update_banner(latest: str):
+    app_update_button.configure(
+        text=f"Update Available: v{latest} - Click to Download",
+        text_color="#FFA500",
+    )
+    app_update_button.pack(pady=(0, 4))
+
+
+def _open_releases():
+    webbrowser.open(RELEASES_URL)
+
+# ---------------------------------------------------------------------------
 # Update worker
 # ---------------------------------------------------------------------------
 
@@ -376,6 +405,17 @@ app.title("Betterfox Updater")
 # Title
 ctk.CTkLabel(app, text="Betterfox Updater", font=("Arial", 20)).pack(pady=(14, 4))
 
+# Self-update banner (hidden by default, shown if a newer version of this app is available)
+app_update_button = ctk.CTkButton(
+    app,
+    text="",
+    font=("Arial", 13),
+    fg_color="transparent",
+    hover_color="gray",
+    border_width=0,
+    command=_open_releases,
+)
+
 # Firefox running banner
 firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 13))
 firefox_banner.pack(pady=(0, 4))
@@ -432,4 +472,5 @@ app.after(150, _check_firefox_on_startup)
 app.after(200, _load_profiles)
 app.after(300, _refresh_backup_menu)
 app.after(400, _start_version_check)
+app.after(500, lambda: threading.Thread(target=_run_app_update_check, daemon=True).start())
 app.mainloop()

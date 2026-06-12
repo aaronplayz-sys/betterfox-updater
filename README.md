@@ -30,7 +30,16 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - [x] Add an app icon
 - [x] Hardware detection to match override files to detected GPU/CPU
 - [x] Notify user that user.js has been updated and suggest to update
-- [ ] Notify user that the app has been updated and suggest to update
+- [x] Notify user that the app has been updated and suggest to update. Might implement system notifications in the future (6/12/2026)
+- [ ] Tray icon / minimize to tray
+- [ ] Scheduled auto-checks
+- [ ] First-run welcome screen
+- [ ] Open profile folder button
+- [ ] Preview, get to see exactly what prefs will be added, changed, and removed before writing anything.
+- [ ] Diff view in the log, show a summary of what actually changed after a sync
+## Long-term features to be done
+- [ ] Replace Linux binary with an AppImage
+- [ ] Localization, would need help
 
 ## How to Use
 

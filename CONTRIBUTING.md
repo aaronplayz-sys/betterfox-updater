@@ -73,7 +73,7 @@ Hardware testing reports (confirming things work correctly on a specific GPU/dis
 The codebase has two files worth knowing:
 
 - **`update_betterfox.py`** — all backend logic: profile detection, downloading, override merging, backup, migration, hardware detection
-- **`gui_test.py`** — the GUI, built with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)
+- **`app.py`** — the GUI, built with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)
 
 **Setup:**
 

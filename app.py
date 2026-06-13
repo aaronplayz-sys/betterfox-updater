@@ -15,14 +15,17 @@ from update_betterfox import (
     get_latest_app_version,
     get_installed_version,
     get_latest_version,
+    load_config,
+    save_config,
     list_backups,
     restore_backup,
     main as run_update_logic,
 )
 
 
-APP_VERSION = "1.5.0"
+APP_VERSION   = "1.6.0"
 RELEASES_URL  = "https://github.com/aaronplayz-sys/betterfox-updater/releases"
+
 
 # ---------------------------------------------------------------------------
 # Thread-safe stdout bridge
@@ -208,19 +211,20 @@ def _check_firefox_on_startup():
 # ---------------------------------------------------------------------------
 # Self-update check
 # ---------------------------------------------------------------------------
+
 def _run_app_update_check():
-    """Checks GitHub for a newer release of this updater app."""
+    """Checks GitHub for a newer version of Betterfox Updater itself."""
     latest = get_latest_app_version()
     if not latest:
         return
-    
+
     if latest != APP_VERSION:
         app.after(0, lambda: _show_app_update_banner(latest))
 
 
 def _show_app_update_banner(latest: str):
     app_update_button.configure(
-        text=f"Update Available: v{latest} - Click to Download",
+        text=f"⬆  Updater v{latest} available — click to download",
         text_color="#FFA500",
     )
     app_update_button.pack(pady=(0, 4))
@@ -228,6 +232,7 @@ def _show_app_update_banner(latest: str):
 
 def _open_releases():
     webbrowser.open(RELEASES_URL)
+
 
 # ---------------------------------------------------------------------------
 # Update worker
@@ -345,6 +350,106 @@ def _on_failure():
 
 
 
+
+# ---------------------------------------------------------------------------
+# Welcome screen
+# ---------------------------------------------------------------------------
+
+BETTERFOX_REPO_URL = "https://github.com/yokoffing/Betterfox"
+
+
+def show_welcome_screen():
+    """Displays a first-run welcome window. Blocks the main window until dismissed."""
+    win = ctk.CTkToplevel(app)
+    win.title("Welcome to Betterfox Updater")
+    win.geometry("480x520")
+    win.resizable(False, False)
+    win.grab_set()  # Make modal
+
+    # Center on main window
+    app.update_idletasks()
+    x = app.winfo_x() + (app.winfo_width()  - 480) // 2
+    y = app.winfo_y() + (app.winfo_height() - 520) // 2
+    win.geometry(f"+{x}+{y}")
+
+    # Scrollable content frame
+    scroll = ctk.CTkScrollableFrame(win, width=440, height=410)
+    scroll.pack(padx=20, pady=(20, 10), fill="both", expand=True)
+
+    def section_header(text: str):
+        ctk.CTkLabel(
+            scroll, text=text, font=("Arial", 14, "bold"), anchor="w"
+        ).pack(fill="x", pady=(12, 2))
+
+    def body_text(text: str):
+        ctk.CTkLabel(
+            scroll, text=text, font=("Arial", 13),
+            wraplength=400, justify="left", anchor="w"
+        ).pack(fill="x", pady=(0, 4))
+
+    def link_button(text: str, url: str):
+        ctk.CTkButton(
+            scroll, text=text, font=("Arial", 13),
+            fg_color="transparent", hover_color="gray",
+            border_width=0, anchor="w",
+            command=lambda: webbrowser.open(url),
+        ).pack(anchor="w", pady=(0, 4))
+
+    # --- Content ---
+    ctk.CTkLabel(
+        scroll, text="Welcome to Betterfox Updater",
+        font=("Arial", 18, "bold")
+    ).pack(pady=(4, 12))
+
+    section_header("What is Betterfox?")
+    body_text(
+        "Betterfox is a user.js template that improves Firefox's default settings "
+        "for better privacy, performance, and security. It's maintained by yokoffing "
+        "and updated with each Firefox release."
+    )
+    link_button("→  View Betterfox on GitHub", BETTERFOX_REPO_URL)
+
+    section_header("What does this updater do?")
+    body_text(
+        "It downloads the latest Betterfox user.js, merges it with your personal "
+        "override files, cleans up preferences removed in newer versions, and creates "
+        "a timestamped backup before every change so you can always roll back."
+    )
+
+    section_header("Override files")
+    body_text(
+        "You can customize Firefox's behaviour by editing the override files placed "
+        "next to this app. Your hardware and OS are detected automatically — the right "
+        "file is applied without any configuration."
+    )
+    body_text("  •  common-overrides.js — applied on all platforms")
+    body_text("  •  windows / mac / linux-overrides.js — your OS")
+    body_text("  •  nvidia / amd / intel / apple-silicon-overrides.js — your GPU")
+    body_text(
+        "Any missing override files are downloaded from the repo automatically "
+        "on your first sync and saved next to this app — open them in any text "
+        "editor to customise your settings."
+    )
+
+    section_header("Getting started")
+    body_text(
+        "Select your Firefox profile from the dropdown, then click Update Now. "
+        "Restart Firefox when prompted to apply the changes."
+    )
+
+    # --- Get Started button ---
+    def on_get_started():
+        cfg = load_config(get_base_path())
+        cfg["first_run"] = False
+        save_config(get_base_path(), cfg)
+        win.destroy()
+
+    ctk.CTkButton(
+        win, text="Get Started", font=("Arial", 14),
+        width=200, height=40, command=on_get_started,
+    ).pack(pady=12)
+
+
 # ---------------------------------------------------------------------------
 # Window icon
 # ---------------------------------------------------------------------------
@@ -405,7 +510,7 @@ app.title("Betterfox Updater")
 # Title
 ctk.CTkLabel(app, text="Betterfox Updater", font=("Arial", 20)).pack(pady=(14, 4))
 
-# Self-update banner (hidden by default, shown if a newer version of this app is available)
+# Self-update banner — hidden until an update is found
 app_update_button = ctk.CTkButton(
     app,
     text="",
@@ -415,6 +520,7 @@ app_update_button = ctk.CTkButton(
     border_width=0,
     command=_open_releases,
 )
+# Not packed yet — only shown when an update is available
 
 # Firefox running banner
 firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 13))
@@ -473,4 +579,10 @@ app.after(200, _load_profiles)
 app.after(300, _refresh_backup_menu)
 app.after(400, _start_version_check)
 app.after(500, lambda: threading.Thread(target=_run_app_update_check, daemon=True).start())
+
+# Show welcome screen on first run
+_cfg = load_config(get_base_path())
+if _cfg.get("first_run", True):
+    app.after(600, show_welcome_screen)
+
 app.mainloop()

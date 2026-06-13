@@ -20,7 +20,7 @@ BETTERFOX_URL     = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/
 OVERRIDE_BASE_URL   = "https://raw.githubusercontent.com/aaronplayz-sys/betterfox-updater/main/"
 BETTERFOX_API       = "https://api.github.com/repos/yokoffing/Betterfox/releases/latest"
 APP_RELEASES_API    = "https://api.github.com/repos/aaronplayz-sys/betterfox-updater/releases/latest"
-VERSION_CACHE_FILE  = "betterfox_version.json"
+CONFIG_FILE         = "config.json"
 MAX_BACKUPS       = 5  # How many timestamped backups to keep per profile
 
 
@@ -353,25 +353,15 @@ def get_latest_version() -> str | None:
 
 
 def get_installed_version(base_dir: str) -> str | None:
-    """Reads the Betterfox version saved after the last successful sync."""
-    cache_path = os.path.join(base_dir, VERSION_CACHE_FILE)
-    if not os.path.exists(cache_path):
-        return None
-    try:
-        with open(cache_path, "r", encoding="utf-8") as f:
-            return json.load(f).get("version")
-    except (OSError, json.JSONDecodeError):
-        return None
+    """Reads the installed Betterfox version from config.json."""
+    return load_config(base_dir).get("installed_betterfox_version")
 
 
 def save_installed_version(base_dir: str, version: str) -> None:
-    """Writes the installed version to the cache file after a successful sync."""
-    cache_path = os.path.join(base_dir, VERSION_CACHE_FILE)
-    try:
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump({"version": version}, f)
-    except OSError as e:
-        print(f"  [warn]  Could not save version cache: {e}")
+    """Saves the installed Betterfox version into config.json after a successful sync."""
+    config = load_config(base_dir)
+    config["installed_betterfox_version"] = version
+    save_config(base_dir, config)
 
 
 def get_latest_app_version() -> str | None:
@@ -411,11 +401,63 @@ def fetch_override(filename: str, base_dir: str) -> str | None:
         return None
 
     if response.status_code == 200:
-        print(f"  [repo]   {filename} downloaded successfully.")
-        return response.text
+        file_content = response.text
+
+        # Save to base_dir so the user can find and customise it
+        try:
+            with open(local_path, "w", encoding="utf-8") as f:
+                f.write(file_content)
+            print(f"  [repo]   {filename} downloaded and saved to {base_dir}")
+        except OSError as e:
+            print(f"  [warn]   {filename} downloaded but could not be saved: {e}")
+
+        return file_content
 
     print(f"  [error]  {filename} not found in repo (HTTP {response.status_code}), skipping.")
     return None
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+_CONFIG_DEFAULTS = {
+    "_comments": {
+        "first_run": (
+            "Controls whether the welcome screen is shown on launch. "
+            "Set to false after first use."
+        ),
+        "installed_betterfox_version": (
+            "The Betterfox release version last synced by this app. "
+            "Used for the version status display."
+        ),
+    },
+    "first_run": True,
+    "installed_betterfox_version": None,
+}
+
+
+def load_config(base_dir: str) -> dict:
+    """Reads config.json and merges with defaults for any missing keys."""
+    config_path = os.path.join(base_dir, CONFIG_FILE)
+    config = dict(_CONFIG_DEFAULTS)
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config.update(json.load(f))
+        except (OSError, json.JSONDecodeError):
+            pass
+    return config
+
+
+def save_config(base_dir: str, config: dict) -> None:
+    """Writes the config dict to config.json."""
+    config_path = os.path.join(base_dir, CONFIG_FILE)
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except OSError as e:
+        print(f"  [warn]  Could not save config: {e}")
 
 
 # ---------------------------------------------------------------------------

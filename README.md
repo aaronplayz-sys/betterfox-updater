@@ -33,7 +33,7 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - [x] Notify user that the app has been updated and suggest to update. Might implement system notifications in the future (6/12/2026)
 - [ ] Tray icon / minimize to tray
 - [ ] Scheduled auto-checks
-- [ ] First-run welcome screen
+- [x] First-run welcome screen
 - [ ] Open profile folder button
 - [ ] Preview, get to see exactly what prefs will be added, changed, and removed before writing anything.
 - [ ] Diff view in the log, show a summary of what actually changed after a sync

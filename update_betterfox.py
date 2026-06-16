@@ -8,7 +8,7 @@ import sys
 import glob
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     import psutil
@@ -431,9 +431,19 @@ _CONFIG_DEFAULTS = {
             "The Betterfox release version last synced by this app. "
             "Used for the version status display."
         ),
+        "check_interval": (
+            "How often to check for Betterfox updates while running in the system tray. "
+            "Options: on_launch, daily, weekly, every_4_weeks. Default: weekly."
+        ),
+        "last_checked": (
+            "ISO 8601 timestamp of the last background update check. "
+            "Managed automatically — do not edit manually."
+        ),
     },
     "first_run": True,
     "installed_betterfox_version": None,
+    "check_interval": "weekly",
+    "last_checked": None,
 }
 
 
@@ -458,6 +468,50 @@ def save_config(base_dir: str, config: dict) -> None:
             json.dump(config, f, indent=2)
     except OSError as e:
         print(f"  [warn]  Could not save config: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Schedule helpers
+# ---------------------------------------------------------------------------
+
+_INTERVAL_DELTAS = {
+    "daily":        timedelta(days=1),
+    "weekly":       timedelta(weeks=1),
+    "every_4_weeks": timedelta(weeks=4),
+}
+
+
+def is_check_due(base_dir: str) -> bool:
+    """Returns True if a background update check should run now.
+
+    Always returns False for "on_launch" since that interval only checks
+    at startup. For all other intervals, compares last_checked against
+    the configured delta.
+    """
+    config       = load_config(base_dir)
+    interval     = config.get("check_interval", "weekly")
+    last_checked = config.get("last_checked")
+
+    if interval == "on_launch":
+        return False
+
+    if not last_checked:
+        return True  # Never checked before
+
+    try:
+        last_dt = datetime.fromisoformat(last_checked)
+    except ValueError:
+        return True  # Malformed timestamp — check now
+
+    delta = _INTERVAL_DELTAS.get(interval, timedelta(weeks=1))
+    return datetime.now() - last_dt >= delta
+
+
+def save_last_checked(base_dir: str) -> None:
+    """Writes the current timestamp to config as the last check time."""
+    config = load_config(base_dir)
+    config["last_checked"] = datetime.now().isoformat()
+    save_config(base_dir, config)
 
 
 # ---------------------------------------------------------------------------

@@ -3,13 +3,20 @@ import os
 import ctypes
 import queue
 import threading
+import time
 import webbrowser
 import tkinter.messagebox as tkmsg
 import customtkinter as ctk
 from PIL import Image, ImageTk
+from typing import Optional
+import pystray
+from pystray import MenuItem as TrayItem
 from update_betterfox import (
     is_firefox_running,
     PSUTIL_AVAILABLE,
+    WINREG_AVAILABLE,
+    get_start_with_system,
+    set_start_with_system,
     get_base_path,
     get_all_profiles,
     get_latest_app_version,
@@ -17,14 +24,27 @@ from update_betterfox import (
     get_latest_version,
     load_config,
     save_config,
+    is_check_due,
+    save_last_checked,
     list_backups,
     restore_backup,
     main as run_update_logic,
 )
 
+try:
+    from plyer import notification as plyer_notify
+    PLYER_AVAILABLE = True
+except ImportError:
+    PLYER_AVAILABLE = False
 
-APP_VERSION   = "1.6.0"
+
+APP_VERSION   = "1.7.0"
 RELEASES_URL  = "https://github.com/aaronplayz-sys/betterfox-updater/releases"
+
+INTERVAL_LABELS = ["On launch only", "Daily", "Weekly", "Every 4 weeks"]
+INTERVAL_KEYS   = ["on_launch", "daily", "weekly", "every_4_weeks"]
+LABEL_TO_KEY    = dict(zip(INTERVAL_LABELS, INTERVAL_KEYS))
+KEY_TO_LABEL    = dict(zip(INTERVAL_KEYS, INTERVAL_LABELS))
 
 
 # ---------------------------------------------------------------------------
@@ -66,13 +86,11 @@ def _poll_queue():
 # Profile picker helpers
 # ---------------------------------------------------------------------------
 
-# Parallel lists: labels shown in the dropdown <-> full profile dicts
-profile_list:  list[dict] = []
-backup_paths:  list[str]  = []
+profile_list: list[dict] = []
+backup_paths: list[str]  = []
 
 
 def _load_profiles():
-    """Populates profile_list and the profile dropdown on startup."""
     profiles = get_all_profiles()
     profile_list.clear()
     profile_list.extend(profiles)
@@ -91,7 +109,6 @@ def _load_profiles():
 
 
 def _get_selected_profile() -> dict | None:
-    """Returns the profile dict for the currently selected dropdown entry."""
     label  = profile_menu.get()
     labels = [
         f"{p['name']}  (default)" if p["is_default"] else p["name"]
@@ -104,19 +121,18 @@ def _get_selected_profile() -> dict | None:
 
 
 def _on_profile_change(_choice: str):
-    """Called when the user picks a different profile — refreshes the backup list."""
     _refresh_backup_menu()
     _start_version_check()
+
+
 # ---------------------------------------------------------------------------
 # Version check
 # ---------------------------------------------------------------------------
 
 def _run_version_check():
-    """Runs in a background thread — fetches latest version and compares to installed."""
     app.after(0, lambda: version_label.configure(
         text="Checking for updates...", text_color="gray"
     ))
-
     installed = get_installed_version(get_base_path())
     latest    = get_latest_version()
 
@@ -149,8 +165,6 @@ def _run_version_check():
 
 def _start_version_check():
     threading.Thread(target=_run_version_check, daemon=True).start()
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -213,11 +227,9 @@ def _check_firefox_on_startup():
 # ---------------------------------------------------------------------------
 
 def _run_app_update_check():
-    """Checks GitHub for a newer version of Betterfox Updater itself."""
     latest = get_latest_app_version()
     if not latest:
         return
-
     if latest != APP_VERSION:
         app.after(0, lambda: _show_app_update_banner(latest))
 
@@ -232,6 +244,208 @@ def _show_app_update_banner(latest: str):
 
 def _open_releases():
     webbrowser.open(RELEASES_URL)
+
+
+# ---------------------------------------------------------------------------
+# Tray icon
+# ---------------------------------------------------------------------------
+
+_tray_icon: Optional[pystray.Icon] = None
+_quit_event = threading.Event()
+
+
+def _find_icon_path(filename: str) -> str | None:
+    """Finds an icon file in _MEIPASS (frozen) or assets/ (dev)."""
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        p = os.path.join(meipass, filename)
+        if os.path.exists(p):
+            return p
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", filename)
+    return p if os.path.exists(p) else None
+
+
+def _load_tray_image() -> Image.Image:
+    """Returns a PIL Image for the tray icon, falling back to a plain square."""
+    for name in ("AppIcon1024.png", "favicon.ico"):
+        path = _find_icon_path(name)
+        if path:
+            return Image.open(path).resize((64, 64), Image.LANCZOS)
+    # Fallback: plain blue square
+    return Image.new("RGB", (64, 64), color="#5865F2")
+
+
+def _restore_from_tray():
+    """Shows the main window and brings it to focus. Thread-safe."""
+    app.after(0, lambda: (
+        app.deiconify(),
+        app.lift(),
+        app.focus_force(),
+    ))
+
+
+def _tray_check_now():
+    """Triggered from the tray menu — runs a background update check."""
+    threading.Thread(target=_background_check, daemon=True).start()
+
+
+def _quit_app():
+    """Cleanly shuts down the schedule loop, tray icon, and main window."""
+    _quit_event.set()
+    if _tray_icon:
+        _tray_icon.stop()
+    app.after(0, app.destroy)
+
+
+def _minimize_to_tray():
+    """Hides the window and ensures the tray icon is running."""
+    app.withdraw()
+
+
+def _setup_tray():
+    """Creates and starts the pystray icon in a background thread."""
+    global _tray_icon
+
+    image = _load_tray_image()
+    menu  = pystray.Menu(
+        TrayItem("Betterfox Updater", None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        TrayItem("Open", lambda icon, item: _restore_from_tray()),
+        TrayItem("Check for Updates Now", lambda icon, item: _tray_check_now()),
+        pystray.Menu.SEPARATOR,
+        TrayItem("Quit", lambda icon, item: _quit_app()),
+    )
+
+    _tray_icon = pystray.Icon(
+        "BetterfoxUpdater",
+        image,
+        "Betterfox Updater",
+        menu,
+    )
+
+    # Left-click restores the window
+    _tray_icon.default_action = lambda icon, item: _restore_from_tray()
+
+    threading.Thread(target=_tray_icon.run, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+def _send_notification(title: str, message: str):
+    """Sends a native OS notification via plyer."""
+    if not PLYER_AVAILABLE:
+        return
+    try:
+        icon_path = _find_icon_path("favicon.ico") or _find_icon_path("AppIcon1024.png")
+        plyer_notify.notify(
+            title=title,
+            message=message,
+            app_name="Betterfox Updater",
+            app_icon=icon_path or "",
+            timeout=10,
+        )
+    except Exception:
+        pass  # Never crash over a notification
+
+
+# ---------------------------------------------------------------------------
+# Background schedule loop
+# ---------------------------------------------------------------------------
+
+def _background_check():
+    """Checks for a Betterfox update and notifies if one is found."""
+    base_dir  = get_base_path()
+    installed = get_installed_version(base_dir)
+    latest    = get_latest_version()
+    save_last_checked(base_dir)
+
+    if not latest:
+        return
+
+    # Refresh the version label on the main thread
+    app.after(0, _start_version_check)
+
+    if not installed:
+        _send_notification(
+            "Betterfox Updater",
+            f"Betterfox v{latest} is available. Open the app to install it.",
+        )
+    elif latest != installed:
+        _send_notification(
+            "Betterfox Update Available",
+            f"v{installed} → v{latest} is ready. Open Betterfox Updater to update.",
+        )
+
+
+def _schedule_loop():
+    """Runs in a background thread, waking every 60 seconds to check if a
+    scheduled update check is due."""
+    while not _quit_event.wait(timeout=60):
+        if is_check_due(get_base_path()):
+            _background_check()
+
+
+# ---------------------------------------------------------------------------
+# Interval selector
+# ---------------------------------------------------------------------------
+
+def _on_interval_change(choice: str):
+    cfg = load_config(get_base_path())
+    cfg["check_interval"] = LABEL_TO_KEY.get(choice, "weekly")
+    save_config(get_base_path(), cfg)
+
+
+def _load_interval_setting():
+    cfg      = load_config(get_base_path())
+    interval = cfg.get("check_interval", "weekly")
+    interval_menu.set(KEY_TO_LABEL.get(interval, "Weekly"))
+
+
+# ---------------------------------------------------------------------------
+# Start minimized toggle
+# ---------------------------------------------------------------------------
+
+def _on_start_minimized_toggle():
+    cfg = load_config(get_base_path())
+    cfg["start_minimized"] = bool(start_minimized_var.get())
+    save_config(get_base_path(), cfg)
+
+
+def _load_start_minimized_setting():
+    cfg = load_config(get_base_path())
+    start_minimized_var.set(1 if cfg.get("start_minimized", False) else 0)
+
+
+# ---------------------------------------------------------------------------
+# Start with system (Windows only)
+# ---------------------------------------------------------------------------
+
+def _on_start_with_system_toggle():
+    enabled = bool(start_with_system_var.get())
+    success = set_start_with_system(enabled)
+    if not success:
+        # Revert checkbox if registry write failed
+        start_with_system_var.set(0)
+        tkmsg.showerror(
+            "Registry Error",
+            "Could not update the startup registry entry. "
+            "Try running the app as administrator."
+        )
+        return
+    # Auto-enable start minimized when enabling start with system
+    if enabled and not start_minimized_var.get():
+        start_minimized_var.set(1)
+        _on_start_minimized_toggle()
+
+
+def _load_start_with_system_setting():
+    if WINREG_AVAILABLE:
+        start_with_system_var.set(1 if get_start_with_system() else 0)
+        start_with_system_check.configure(state="normal")
+    else:
+        start_with_system_check.configure(state="disabled")
 
 
 # ---------------------------------------------------------------------------
@@ -349,8 +563,6 @@ def _on_failure():
     _set_buttons("normal")
 
 
-
-
 # ---------------------------------------------------------------------------
 # Welcome screen
 # ---------------------------------------------------------------------------
@@ -364,15 +576,13 @@ def show_welcome_screen():
     win.title("Welcome to Betterfox Updater")
     win.geometry("480x520")
     win.resizable(False, False)
-    win.grab_set()  # Make modal
+    win.grab_set()
 
-    # Center on main window
     app.update_idletasks()
     x = app.winfo_x() + (app.winfo_width()  - 480) // 2
     y = app.winfo_y() + (app.winfo_height() - 520) // 2
     win.geometry(f"+{x}+{y}")
 
-    # Scrollable content frame
     scroll = ctk.CTkScrollableFrame(win, width=440, height=410)
     scroll.pack(padx=20, pady=(20, 10), fill="both", expand=True)
 
@@ -395,7 +605,6 @@ def show_welcome_screen():
             command=lambda: webbrowser.open(url),
         ).pack(anchor="w", pady=(0, 4))
 
-    # --- Content ---
     ctk.CTkLabel(
         scroll, text="Welcome to Betterfox Updater",
         font=("Arial", 18, "bold")
@@ -434,10 +643,11 @@ def show_welcome_screen():
     section_header("Getting started")
     body_text(
         "Select your Firefox profile from the dropdown, then click Update Now. "
-        "Restart Firefox when prompted to apply the changes."
+        "Restart Firefox when prompted to apply the changes. "
+        "Closing the window minimizes the app to the system tray so it can "
+        "notify you when updates are available."
     )
 
-    # --- Get Started button ---
     def on_get_started():
         cfg = load_config(get_base_path())
         cfg["first_run"] = False
@@ -455,47 +665,28 @@ def show_welcome_screen():
 # ---------------------------------------------------------------------------
 
 def _set_window_icon():
-    """Sets the window icon cross-platform.
-
-    Looks in sys._MEIPASS first (PyInstaller --onefile bundle), then falls
-    back to the local assets/ folder for dev runs. Never crashes — icon is
-    cosmetic and should never block startup.
-    """
     import platform as _platform
-
-    def _find(filename: str) -> str | None:
-        # Frozen: files bundled via --add-data land in sys._MEIPASS
-        meipass = getattr(sys, "_MEIPASS", None)
-        if meipass:
-            p = os.path.join(meipass, filename)
-            if os.path.exists(p):
-                return p
-        # Dev: look in assets/ next to this script
-        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", filename)
-        return p if os.path.exists(p) else None
 
     try:
         if _platform.system() == "Windows":
-            # Tell Windows this is its own app so the taskbar shows our
-            # icon instead of the generic Python one
             try:
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                    "BetterfoxUpdater"
+                    "Betterfox.Updater"
                 )
             except Exception:
                 pass
-            path = _find("favicon.ico")
+            path = _find_icon_path("favicon.ico")
             if path:
                 app.iconbitmap(path)
         else:
-            path = _find("AppIcon1024.png")
+            path = _find_icon_path("AppIcon1024.png")
             if path:
                 img   = Image.open(path).resize((64, 64), Image.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
                 app.iconphoto(True, photo)
-                app._icon_ref = photo  # prevent garbage collection
+                app._icon_ref = photo
     except Exception:
-        pass  # never crash over a missing icon
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -504,23 +695,28 @@ def _set_window_icon():
 
 app = ctk.CTk()
 _set_window_icon()
-app.geometry("500x620")
+
+# Withdraw before the event loop if start_minimized is configured —
+# prevents the window from flashing briefly on startup
+_startup_cfg = load_config(get_base_path())
+if _startup_cfg.get("start_minimized", False):
+    app.withdraw()
+
+app.geometry("500x680")
 app.title("Betterfox Updater")
+
+# Intercept close button — minimize to tray instead of quitting
+app.protocol("WM_DELETE_WINDOW", _minimize_to_tray)
 
 # Title
 ctk.CTkLabel(app, text="Betterfox Updater", font=("Arial", 20)).pack(pady=(14, 4))
 
-# Self-update banner — hidden until an update is found
+# Self-update banner
 app_update_button = ctk.CTkButton(
-    app,
-    text="",
-    font=("Arial", 13),
-    fg_color="transparent",
-    hover_color="gray",
-    border_width=0,
-    command=_open_releases,
+    app, text="", font=("Arial", 13),
+    fg_color="transparent", hover_color="gray",
+    border_width=0, command=_open_releases,
 )
-# Not packed yet — only shown when an update is available
 
 # Firefox running banner
 firefox_banner = ctk.CTkLabel(app, text="", font=("Arial", 13))
@@ -533,13 +729,10 @@ version_label.pack(pady=(0, 4))
 # Profile picker
 profile_frame = ctk.CTkFrame(app, fg_color="transparent")
 profile_frame.pack(pady=(4, 2))
-
 ctk.CTkLabel(profile_frame, text="Profile:", font=("Arial", 13)).pack(side="left", padx=(0, 8))
 profile_menu = ctk.CTkOptionMenu(
-    profile_frame,
-    values=["Loading..."],
-    command=_on_profile_change,
-    width=300,
+    profile_frame, values=["Loading..."],
+    command=_on_profile_change, width=300,
 )
 profile_menu.pack(side="left")
 
@@ -556,17 +749,49 @@ ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", fon
 
 restore_frame = ctk.CTkFrame(app, fg_color="transparent")
 restore_frame.pack(pady=4)
-
 restore_menu = ctk.CTkOptionMenu(restore_frame, values=["No backups found"], width=260)
 restore_menu.pack(side="left", padx=(0, 8))
-
 restore_button = ctk.CTkButton(
     restore_frame, text="Restore", command=start_restore, width=100, state="disabled"
 )
 restore_button.pack(side="left")
 
+# Check interval selector
+ctk.CTkLabel(app, text="── Update check interval ──", text_color="white", font=("Arial", 13)).pack(pady=(14, 4))
+interval_frame = ctk.CTkFrame(app, fg_color="transparent")
+interval_frame.pack(pady=4)
+ctk.CTkLabel(interval_frame, text="Check for updates:", font=("Arial", 13)).pack(side="left", padx=(0, 8))
+interval_menu = ctk.CTkOptionMenu(
+    interval_frame, values=INTERVAL_LABELS,
+    command=_on_interval_change, width=200,
+)
+interval_menu.pack(side="left")
+
+# Start minimized checkbox
+start_minimized_var = ctk.IntVar(value=0)
+start_minimized_check = ctk.CTkCheckBox(
+    app,
+    text="Start minimized to tray",
+    font=("Arial", 13),
+    variable=start_minimized_var,
+    command=_on_start_minimized_toggle,
+)
+start_minimized_check.pack(pady=(4, 8))
+
+# Start with system checkbox (Windows only — disabled on other platforms)
+start_with_system_var = ctk.IntVar(value=0)
+start_with_system_check = ctk.CTkCheckBox(
+    app,
+    text="Start with system  (Windows only)",
+    font=("Arial", 13),
+    variable=start_with_system_var,
+    command=_on_start_with_system_toggle,
+    state="disabled",  # Enabled after _load_start_with_system_setting runs
+)
+start_with_system_check.pack(pady=(0, 8))
+
 # Log box
-log_box = ctk.CTkTextbox(app, width=440, height=200)
+log_box = ctk.CTkTextbox(app, width=440, height=160)
 log_box.pack(pady=16, padx=20)
 
 # ---------------------------------------------------------------------------
@@ -578,11 +803,16 @@ app.after(150, _check_firefox_on_startup)
 app.after(200, _load_profiles)
 app.after(300, _refresh_backup_menu)
 app.after(400, _start_version_check)
+app.after(450, _load_interval_setting)
+app.after(460, _load_start_minimized_setting)
+app.after(470, _load_start_with_system_setting)
 app.after(500, lambda: threading.Thread(target=_run_app_update_check, daemon=True).start())
+app.after(600, _setup_tray)
+app.after(700, lambda: threading.Thread(target=_schedule_loop, daemon=True).start())
 
 # Show welcome screen on first run
 _cfg = load_config(get_base_path())
 if _cfg.get("first_run", True):
-    app.after(600, show_welcome_screen)
+    app.after(800, show_welcome_screen)
 
 app.mainloop()

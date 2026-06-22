@@ -16,9 +16,17 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
+try:
+    import winreg
+    WINREG_AVAILABLE = True
+except ImportError:
+    WINREG_AVAILABLE = False  # Non-Windows
+
 BETTERFOX_URL     = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
 OVERRIDE_BASE_URL   = "https://raw.githubusercontent.com/aaronplayz-sys/betterfox-updater/main/"
 BETTERFOX_API       = "https://api.github.com/repos/yokoffing/Betterfox/releases/latest"
+STARTUP_APP_NAME    = "BetterfoxUpdater"
+STARTUP_REG_KEY     = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_RELEASES_API    = "https://api.github.com/repos/aaronplayz-sys/betterfox-updater/releases/latest"
 CONFIG_FILE         = "config.json"
 MAX_BACKUPS       = 5  # How many timestamped backups to keep per profile
@@ -439,11 +447,16 @@ _CONFIG_DEFAULTS = {
             "ISO 8601 timestamp of the last background update check. "
             "Managed automatically — do not edit manually."
         ),
+        "start_minimized": (
+            "If true, the app launches directly to the system tray "
+            "without showing the main window."
+        ),
     },
     "first_run": True,
     "installed_betterfox_version": None,
     "check_interval": "weekly",
     "last_checked": None,
+    "start_minimized": False,
 }
 
 
@@ -512,6 +525,72 @@ def save_last_checked(base_dir: str) -> None:
     config = load_config(base_dir)
     config["last_checked"] = datetime.now().isoformat()
     save_config(base_dir, config)
+
+
+# ---------------------------------------------------------------------------
+# Windows startup registration
+# ---------------------------------------------------------------------------
+
+def _get_startup_command() -> str:
+    """Returns the command to register for Windows autostart."""
+    if getattr(sys, "frozen", False):
+        # Compiled exe — just the executable path
+        return f'"{sys.executable}"'
+    # Dev: python interpreter + app.py (same directory as this file)
+    app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
+    return f'"{sys.executable}" "{app_path}"'
+
+
+def set_start_with_system(enabled: bool) -> bool:
+    """Adds or removes the Windows autostart registry entry.
+
+    Writes to HKEY_CURRENT_USER so no admin privileges are required.
+    Returns True on success, False if winreg is unavailable or the
+    operation fails.
+    """
+    if not WINREG_AVAILABLE:
+        return False
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            STARTUP_REG_KEY,
+            0,
+            winreg.KEY_SET_VALUE,
+        )
+        if enabled:
+            winreg.SetValueEx(key, STARTUP_APP_NAME, 0, winreg.REG_SZ, _get_startup_command())
+        else:
+            try:
+                winreg.DeleteValue(key, STARTUP_APP_NAME)
+            except FileNotFoundError:
+                pass  # Already not registered — nothing to do
+        winreg.CloseKey(key)
+        return True
+    except Exception as e:
+        print(f"  [warn]  Could not update startup registry: {e}")
+        return False
+
+
+def get_start_with_system() -> bool:
+    """Returns True if the autostart registry entry currently exists."""
+    if not WINREG_AVAILABLE:
+        return False
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            STARTUP_REG_KEY,
+            0,
+            winreg.KEY_READ,
+        )
+        try:
+            winreg.QueryValueEx(key, STARTUP_APP_NAME)
+            winreg.CloseKey(key)
+            return True
+        except FileNotFoundError:
+            winreg.CloseKey(key)
+            return False
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------

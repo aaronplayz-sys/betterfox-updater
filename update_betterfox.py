@@ -528,26 +528,25 @@ def save_last_checked(base_dir: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Windows startup registration
+# Startup registration (Windows + Linux)
 # ---------------------------------------------------------------------------
 
+_SYSTEM = platform.system()
+START_WITH_SYSTEM_SUPPORTED = _SYSTEM in ("Windows", "Linux")
+
+
 def _get_startup_command() -> str:
-    """Returns the command to register for Windows autostart."""
+    """Returns the executable command for autostart registration."""
     if getattr(sys, "frozen", False):
-        # Compiled exe — just the executable path
         return f'"{sys.executable}"'
-    # Dev: python interpreter + app.py (same directory as this file)
     app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
     return f'"{sys.executable}" "{app_path}"'
 
 
-def set_start_with_system(enabled: bool) -> bool:
-    """Adds or removes the Windows autostart registry entry.
+# --- Windows ---
 
-    Writes to HKEY_CURRENT_USER so no admin privileges are required.
-    Returns True on success, False if winreg is unavailable or the
-    operation fails.
-    """
+def _set_start_with_system_windows(enabled: bool) -> bool:
+    """Writes or removes the HKCU Run registry entry. No admin required."""
     if not WINREG_AVAILABLE:
         return False
     try:
@@ -563,7 +562,7 @@ def set_start_with_system(enabled: bool) -> bool:
             try:
                 winreg.DeleteValue(key, STARTUP_APP_NAME)
             except FileNotFoundError:
-                pass  # Already not registered — nothing to do
+                pass
         winreg.CloseKey(key)
         return True
     except Exception as e:
@@ -571,8 +570,7 @@ def set_start_with_system(enabled: bool) -> bool:
         return False
 
 
-def get_start_with_system() -> bool:
-    """Returns True if the autostart registry entry currently exists."""
+def _get_start_with_system_windows() -> bool:
     if not WINREG_AVAILABLE:
         return False
     try:
@@ -591,6 +589,67 @@ def get_start_with_system() -> bool:
             return False
     except Exception:
         return False
+
+
+# --- Linux (XDG autostart) ---
+
+_AUTOSTART_DIR  = os.path.expanduser("~/.config/autostart")
+_AUTOSTART_FILE = os.path.join(_AUTOSTART_DIR, "betterfox-updater.desktop")
+
+_DESKTOP_TEMPLATE = """[Desktop Entry]
+Type=Application
+Name=Betterfox Updater
+Exec={exec_cmd}
+Comment=Automatically update Betterfox user.js for Firefox
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+"""
+
+
+def _set_start_with_system_linux(enabled: bool) -> bool:
+    """Writes or removes the XDG autostart .desktop file."""
+    if enabled:
+        try:
+            os.makedirs(_AUTOSTART_DIR, exist_ok=True)
+            with open(_AUTOSTART_FILE, "w", encoding="utf-8") as f:
+                f.write(_DESKTOP_TEMPLATE.format(exec_cmd=_get_startup_command()))
+            return True
+        except OSError as e:
+            print(f"  [warn]  Could not create autostart file: {e}")
+            return False
+    else:
+        try:
+            if os.path.exists(_AUTOSTART_FILE):
+                os.remove(_AUTOSTART_FILE)
+            return True
+        except OSError as e:
+            print(f"  [warn]  Could not remove autostart file: {e}")
+            return False
+
+
+def _get_start_with_system_linux() -> bool:
+    return os.path.exists(_AUTOSTART_FILE)
+
+
+# --- Platform-agnostic wrappers (used by the GUI) ---
+
+def set_start_with_system(enabled: bool) -> bool:
+    """Registers or unregisters the app for system startup on the current platform."""
+    if _SYSTEM == "Windows":
+        return _set_start_with_system_windows(enabled)
+    if _SYSTEM == "Linux":
+        return _set_start_with_system_linux(enabled)
+    return False
+
+
+def get_start_with_system() -> bool:
+    """Returns True if the app is currently registered for system startup."""
+    if _SYSTEM == "Windows":
+        return _get_start_with_system_windows()
+    if _SYSTEM == "Linux":
+        return _get_start_with_system_linux()
+    return False
 
 
 # ---------------------------------------------------------------------------

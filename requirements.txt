@@ -2,3 +2,5 @@ requests
 customtkinter
 pillow
 psutil
+pystray
+plyer

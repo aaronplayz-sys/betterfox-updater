@@ -14,7 +14,7 @@ from pystray import MenuItem as TrayItem
 from update_betterfox import (
     is_firefox_running,
     PSUTIL_AVAILABLE,
-    WINREG_AVAILABLE,
+    START_WITH_SYSTEM_SUPPORTED,
     get_start_with_system,
     set_start_with_system,
     get_base_path,
@@ -276,12 +276,21 @@ def _load_tray_image() -> Image.Image:
 
 
 def _restore_from_tray():
-    """Shows the main window and brings it to focus. Thread-safe."""
-    app.after(0, lambda: (
-        app.deiconify(),
-        app.lift(),
-        app.focus_force(),
-    ))
+    """Shows the main window and brings it to focus. Thread-safe.
+
+    Uses a named inner function instead of a lambda tuple since pystray's
+    Linux GTK backend can mishandle multi-expression lambdas posted to the
+    tkinter event queue. The topmost trick forces focus past the window
+    manager's focus-stealing prevention on Linux and macOS.
+    """
+    def _do_restore():
+        app.deiconify()
+        app.lift()
+        app.attributes("-topmost", True)
+        app.after(200, lambda: app.attributes("-topmost", False))
+        app.focus_force()
+
+    app.after(0, _do_restore)
 
 
 def _tray_check_now():
@@ -419,7 +428,7 @@ def _load_start_minimized_setting():
 
 
 # ---------------------------------------------------------------------------
-# Start with system (Windows only)
+# Start with system
 # ---------------------------------------------------------------------------
 
 def _on_start_with_system_toggle():
@@ -441,7 +450,7 @@ def _on_start_with_system_toggle():
 
 
 def _load_start_with_system_setting():
-    if WINREG_AVAILABLE:
+    if START_WITH_SYSTEM_SUPPORTED:
         start_with_system_var.set(1 if get_start_with_system() else 0)
         start_with_system_check.configure(state="normal")
     else:
@@ -778,11 +787,11 @@ start_minimized_check = ctk.CTkCheckBox(
 )
 start_minimized_check.pack(pady=(4, 8))
 
-# Start with system checkbox (Windows only — disabled on other platforms)
+# Start with system checkbox — disabled on unsupported platforms (e.g. macOS)
 start_with_system_var = ctk.IntVar(value=0)
 start_with_system_check = ctk.CTkCheckBox(
     app,
-    text="Start with system  (Windows only)",
+    text="Start with system",
     font=("Arial", 13),
     variable=start_with_system_var,
     command=_on_start_with_system_toggle,

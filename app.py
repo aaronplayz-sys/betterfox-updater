@@ -8,7 +8,7 @@ import webbrowser
 import tkinter.messagebox as tkmsg
 import customtkinter as ctk
 from PIL import Image, ImageTk
-from typing import Optional, Any
+from typing import Optional
 import pystray
 from pystray import MenuItem as TrayItem
 from update_betterfox import (
@@ -250,7 +250,7 @@ def _open_releases():
 # Tray icon
 # ---------------------------------------------------------------------------
 
-_tray_icon: Optional[Any] = None
+_tray_icon: Optional[pystray.Icon] = None
 _quit_event = threading.Event()
 
 

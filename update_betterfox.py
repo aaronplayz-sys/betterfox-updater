@@ -632,6 +632,47 @@ def _get_start_with_system_linux() -> bool:
     return os.path.exists(_AUTOSTART_FILE)
 
 
+# --- Linux application desktop entry (taskbar icon) ---
+
+_APPLICATIONS_DIR = os.path.expanduser("~/.local/share/applications")
+_DESKTOP_APP_FILE = os.path.join(_APPLICATIONS_DIR, "betterfox-updater.desktop")
+
+_APP_DESKTOP_TEMPLATE = """[Desktop Entry]
+Type=Application
+Name=Betterfox Updater
+Exec={exec_cmd}
+Icon={icon_path}
+Comment=Automatically update Betterfox user.js for Firefox
+Categories=Utility;
+StartupWMClass=Betterfoxupdater
+"""
+
+
+def install_linux_desktop_entry(icon_path: str) -> None:
+    """Writes a .desktop file to ~/.local/share/applications/ so the
+    taskbar shows the correct icon and associates it with the running window.
+
+    Safe to call on every startup — overwrites if already present so the
+    Exec path stays current when the app is moved.
+    """
+    if platform.system() != "Linux":
+        return
+    try:
+        os.makedirs(_APPLICATIONS_DIR, exist_ok=True)
+        with open(_DESKTOP_APP_FILE, "w", encoding="utf-8") as f:
+            f.write(_APP_DESKTOP_TEMPLATE.format(
+                exec_cmd=_get_startup_command(),
+                icon_path=icon_path,
+            ))
+        # Refresh the desktop database so the icon is picked up immediately
+        subprocess.run(
+            ["update-desktop-database", _APPLICATIONS_DIR],
+            capture_output=True, timeout=5,
+        )
+    except Exception as e:
+        print(f"  [warn]  Could not install desktop entry: {e}")
+
+
 # --- Platform-agnostic wrappers (used by the GUI) ---
 
 def set_start_with_system(enabled: bool) -> bool:

@@ -17,6 +17,7 @@ from update_betterfox import (
     START_WITH_SYSTEM_SUPPORTED,
     get_start_with_system,
     set_start_with_system,
+    install_linux_desktop_entry,
     get_base_path,
     get_all_profiles,
     get_latest_app_version,
@@ -694,15 +695,37 @@ def _set_window_icon():
                 photo = ImageTk.PhotoImage(img)
                 app.iconphoto(True, photo)
                 app._icon_ref = photo
+
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Linux desktop entry installer
+# ---------------------------------------------------------------------------
+
+def _install_linux_desktop_entry():
+    """Writes ~/.local/share/applications/betterfox-updater.desktop on Linux.
+
+    Called unconditionally on startup — finds the icon itself so it is not
+    dependent on _set_window_icon succeeding first.
+    """
+    import platform as _platform
+    if _platform.system() != "Linux":
+        return
+    icon_path = (
+        _find_icon_path("AppIcon1024.png")
+        or _find_icon_path("favicon.ico")
+        or ""
+    )
+    install_linux_desktop_entry(icon_path)
 
 
 # ---------------------------------------------------------------------------
 # GUI layout
 # ---------------------------------------------------------------------------
 
-app = ctk.CTk()
+app = ctk.CTk(className="BetterfoxUpdater")
 _set_window_icon()
 
 # Withdraw before the event loop if start_minimized is configured —
@@ -816,6 +839,7 @@ app.after(450, _load_interval_setting)
 app.after(460, _load_start_minimized_setting)
 app.after(470, _load_start_with_system_setting)
 app.after(500, lambda: threading.Thread(target=_run_app_update_check, daemon=True).start())
+app.after(550, _install_linux_desktop_entry)
 app.after(600, _setup_tray)
 app.after(700, lambda: threading.Thread(target=_schedule_loop, daemon=True).start())
 

@@ -31,8 +31,9 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - [x] Hardware detection to match override files to detected GPU/CPU
 - [x] Notify user that user.js has been updated and suggest to update
 - [x] Notify user that the app has been updated and suggest to update. Might implement system notifications in the future (6/12/2026)
-- [ ] Tray icon / minimize to tray
-- [ ] Scheduled auto-checks
+- [ ] Tray icon / minimize to tray (being worked on, expected in 1.7.0 release)
+- [ ] Scheduled auto-checks (being worked on, expected in 1.7.0 release)
+- [ ] Start with System (being worked on, expected in 1.7.0 release) 
 - [x] First-run welcome screen
 - [ ] Open profile folder button
 - [ ] Preview, get to see exactly what prefs will be added, changed, and removed before writing anything.

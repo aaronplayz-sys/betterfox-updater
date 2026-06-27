@@ -3,6 +3,8 @@ A cross-platform, Python-based utility designed to automate the installation of 
 
 This project was inspired by [Betterfox Issue #167](https://github.com/yokoffing/Betterfox/issues/167) and aims to solve the "stalled updater" problem by providing a modular, hardware-aware sync tool.
 
+Images below is a preview of what the app looks like on Windows 11, looks are simular with MacOS and Linux.
+
 <p align="center">
     <img src="images/BetterfoxUpdater.png" alt="Betterfox Updater"/>
     <img src="images/BetterfoxUpdaterSucess.png" alt="Betterfox Updater Success"/>
@@ -10,15 +12,15 @@ This project was inspired by [Betterfox Issue #167](https://github.com/yokoffing
 
 ## ⚠️ Antivirus Notice
 
-The macOS executable may be flagged by Microsoft Defender as a false positive. This is a known issue with unsigned Python executables built with PyInstaller — the binary is not malicious. The Windows executable has been patched to avoid this. If you are concerned, you can verify the build yourself by running from source via the developer setup below, or inspect the full source code in this repo.
+The macOS executable may be flagged by Microsoft Defender as a false positive. This is a known issue with unsigned Python executables built with PyInstaller — the binary is not malicious. The Windows executable has been patched in attempt to avoid this. If you are concerned, you can verify the build yourself by running from source via the developer setup below, or inspect the full source code in this repo.
 
 ## ✨ Key Features
 
-- **Intelligent Profile Detection**: Automatically locates the default-release Firefox profile across Windows, macOS, and Linux.
+- **Intelligent Profile Detection**: Automatically locates the default-release Firefox profile across Windows, MacOS, and Linux.
 
 - **Modular Overrides**: Merges the latest Betterfox user.js with your personal tweaks (`common-overrides.js`, `windows-overrides.js`, `mac-overrides.js`, or `linux-overrides.js`). Missing override files are automatically downloaded from the repo as a fallback.
 
-- **Hardware Aware**: Automatically detects your GPU or CPU and applies the right override file. Covers NVIDIA, AMD, and Intel GPUs on Windows and Linux; Apple Silicon vs Intel on macOS.
+- **Hardware Aware**: Automatically detects your GPU or CPU and applies the right override file. Covers NVIDIA, AMD, and Intel GPUs on Windows and Linux; Apple Silicon vs Intel on MacOS.
 
 - **Firefox Running Detection**: Warns you if Firefox is open before syncing, so you know to restart it after the update applies.
 
@@ -31,8 +33,9 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - [x] Hardware detection to match override files to detected GPU/CPU
 - [x] Notify user that user.js has been updated and suggest to update
 - [x] Notify user that the app has been updated and suggest to update. Might implement system notifications in the future (6/12/2026)
-- [ ] Tray icon / minimize to tray
-- [ ] Scheduled auto-checks
+- [ ] Tray icon / minimize to tray (being worked on, expected in 1.7.0 release)
+- [ ] Scheduled auto-checks (being worked on, expected in 1.7.0 release)
+- [ ] Start with System (being worked on, expected in 1.7.0 release) 
 - [x] First-run welcome screen
 - [ ] Open profile folder button
 - [ ] Preview, get to see exactly what prefs will be added, changed, and removed before writing anything.

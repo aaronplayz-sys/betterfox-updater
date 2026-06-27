@@ -32,16 +32,15 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - [x] Add an app icon
 - [x] Hardware detection to match override files to detected GPU/CPU
 - [x] Notify user that user.js has been updated and suggest to update
-- [x] Notify user that the app has been updated and suggest to update. Might implement system notifications in the future (6/12/2026)
-- [ ] Tray icon / minimize to tray (being worked on, expected in 1.7.0 release)
-- [ ] Scheduled auto-checks (being worked on, expected in 1.7.0 release)
-- [ ] Start with System (being worked on, expected in 1.7.0 release) 
+- [x] Notify user that the app has been updated and suggest to update.
+- [x] Tray icon / minimize to tray (MacOS needs a diffrent solution)
+- [x] Scheduled auto-checks
+- [x] Start with System
 - [x] First-run welcome screen
 - [ ] Open profile folder button
-- [ ] Preview, get to see exactly what prefs will be added, changed, and removed before writing anything.
-- [ ] Diff view in the log, show a summary of what actually changed after a sync
-## Long-term features to be done
+- [ ] Diff view in the log
 - [ ] Replace Linux binary with an AppImage
+- [ ] MacOS tray (proper native implementation)
 - [ ] Localization, would need help
 
 ## How to Use
@@ -101,9 +100,9 @@ pip install pyinstaller
 pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import psutil --icon assets/favicon.ico --add-data "assets/favicon.ico;." --name BetterfoxUpdater app.py
 ```
 
-> **Linux only**: tkinter must be installed separately before building.
+> **Linux only**: tkinter and tray dependencies must be installed separately before building.
 > ```
-> sudo apt-get install python3-tk
+> sudo apt install python3-tk python3-gi gir1.2-ayatanaappindicator3-0.1
 > ```
 
 ## 🚀 Releasing a New Version

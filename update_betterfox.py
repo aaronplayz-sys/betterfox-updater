@@ -532,7 +532,7 @@ def save_last_checked(base_dir: str) -> None:
 # ---------------------------------------------------------------------------
 
 _SYSTEM = platform.system()
-START_WITH_SYSTEM_SUPPORTED = _SYSTEM in ("Windows", "Linux")
+START_WITH_SYSTEM_SUPPORTED = _SYSTEM in ("Windows", "Linux", "Darwin")
 
 
 def _get_startup_command() -> str:
@@ -673,6 +673,80 @@ def install_linux_desktop_entry(icon_path: str) -> None:
         print(f"  [warn]  Could not install desktop entry: {e}")
 
 
+# --- macOS (LaunchAgent plist) ---
+
+_LAUNCHAGENTS_DIR  = os.path.expanduser("~/Library/LaunchAgents")
+_LAUNCHAGENT_LABEL = "com.betterfox.updater"
+_LAUNCHAGENT_FILE  = os.path.join(_LAUNCHAGENTS_DIR, f"{_LAUNCHAGENT_LABEL}.plist")
+
+_PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+{args}
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
+"""
+
+
+def _get_plist_args() -> str:
+    """Returns the <array> contents for ProgramArguments."""
+    if getattr(sys, "frozen", False):
+        return f"        <string>{sys.executable}</string>"
+    app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
+    return (
+        f"        <string>{sys.executable}</string>\n"
+        f"        <string>{app_path}</string>"
+    )
+
+
+def _set_start_with_system_macos(enabled: bool) -> bool:
+    """Writes or removes the LaunchAgent plist for macOS autostart."""
+    if enabled:
+        try:
+            os.makedirs(_LAUNCHAGENTS_DIR, exist_ok=True)
+            with open(_LAUNCHAGENT_FILE, "w", encoding="utf-8") as f:
+                f.write(_PLIST_TEMPLATE.format(
+                    label=_LAUNCHAGENT_LABEL,
+                    args=_get_plist_args(),
+                ))
+            # Load the agent so it takes effect without a logout
+            subprocess.run(
+                ["launchctl", "load", _LAUNCHAGENT_FILE],
+                capture_output=True, timeout=5,
+            )
+            return True
+        except Exception as e:
+            print(f"  [warn]  Could not create LaunchAgent: {e}")
+            return False
+    else:
+        try:
+            if os.path.exists(_LAUNCHAGENT_FILE):
+                subprocess.run(
+                    ["launchctl", "unload", _LAUNCHAGENT_FILE],
+                    capture_output=True, timeout=5,
+                )
+                os.remove(_LAUNCHAGENT_FILE)
+            return True
+        except Exception as e:
+            print(f"  [warn]  Could not remove LaunchAgent: {e}")
+            return False
+
+
+def _get_start_with_system_macos() -> bool:
+    return os.path.exists(_LAUNCHAGENT_FILE)
+
+
 # --- Platform-agnostic wrappers (used by the GUI) ---
 
 def set_start_with_system(enabled: bool) -> bool:
@@ -681,6 +755,8 @@ def set_start_with_system(enabled: bool) -> bool:
         return _set_start_with_system_windows(enabled)
     if _SYSTEM == "Linux":
         return _set_start_with_system_linux(enabled)
+    if _SYSTEM == "Darwin":
+        return _set_start_with_system_macos(enabled)
     return False
 
 
@@ -690,6 +766,8 @@ def get_start_with_system() -> bool:
         return _get_start_with_system_windows()
     if _SYSTEM == "Linux":
         return _get_start_with_system_linux()
+    if _SYSTEM == "Darwin":
+        return _get_start_with_system_macos()
     return False
 
 

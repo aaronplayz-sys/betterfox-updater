@@ -313,7 +313,18 @@ def _minimize_to_tray():
 
 
 def _setup_tray():
-    """Creates and starts the pystray icon in a background thread."""
+    """Creates and starts the pystray icon in a background thread.
+
+    Skipped on macOS — pystray's AppKit backend conflicts with tkinter's
+    main thread ownership of the NSApplication run loop, causing EXC_BREAKPOINT.
+    The close button exits normally on macOS as a result.
+    """
+    import platform as _platform
+    if _platform.system() == "Darwin":
+        # Revert to normal close behaviour on macOS
+        app.protocol("WM_DELETE_WINDOW", _quit_app)
+        return
+
     global _tray_icon
 
     image = _load_tray_image()
@@ -695,6 +706,7 @@ def _set_window_icon():
                 photo = ImageTk.PhotoImage(img)
                 app.iconphoto(True, photo)
                 app._icon_ref = photo
+                # Dock icon on macOS is handled by the .icns file embedded in the compiled build
 
     except Exception:
         pass

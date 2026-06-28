@@ -28,6 +28,10 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 
 - **Modern GUI**: Includes a simple interface with a live progress log.
 
+- **Scheduled Checks**: Automatically check upstream user.js changes with a specified interval.
+
+- **Start on system boot**: Have the app run automatically in the background when you start your system.
+
 ## To-do
 - [x] Add an app icon
 - [x] Hardware detection to match override files to detected GPU/CPU

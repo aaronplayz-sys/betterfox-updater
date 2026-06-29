@@ -41,8 +41,8 @@ The macOS executable may be flagged by Microsoft Defender as a false positive. T
 - [x] Scheduled auto-checks
 - [x] Start with System
 - [x] First-run welcome screen
-- [ ] Open profile folder button
-- [ ] Diff view in the log
+- [x] Open profile folder button
+- [x] Diff view in the log
 - [ ] Replace Linux binary with an AppImage
 - [ ] MacOS tray (proper native implementation)
 - [ ] Localization, would need help

@@ -4,6 +4,7 @@ import ctypes
 import queue
 import threading
 import time
+import subprocess
 import webbrowser
 import tkinter.messagebox as tkmsg
 import customtkinter as ctk
@@ -127,6 +128,32 @@ def _on_profile_change(_choice: str):
 
 
 # ---------------------------------------------------------------------------
+# Profile folder
+# ---------------------------------------------------------------------------
+
+def _open_profile_folder():
+    """Opens the selected Firefox profile directory in the system file manager."""
+    import platform as _platform
+    profile = _get_selected_profile()
+    if not profile:
+        return
+    path = profile["path"]
+    if not os.path.exists(path):
+        tkmsg.showerror("Folder Not Found", f"Profile folder does not exist:\n{path}")
+        return
+    try:
+        system = _platform.system()
+        if system == "Windows":
+            os.startfile(path)
+        elif system == "Darwin":
+            subprocess.run(["open", path], check=True)
+        else:
+            subprocess.run(["xdg-open", path], check=True)
+    except Exception as e:
+        tkmsg.showerror("Error", f"Could not open folder:\n{e}")
+
+
+# ---------------------------------------------------------------------------
 # Version check
 # ---------------------------------------------------------------------------
 
@@ -207,6 +234,7 @@ def _refresh_backup_menu():
 def _set_buttons(state: str):
     update_button.configure(state=state)
     restore_button.configure(state=state)
+    open_folder_button.configure(state=state)
     profile_menu.configure(state="disabled" if state == "disabled" else "normal")
 
 
@@ -277,21 +305,12 @@ def _load_tray_image() -> Image.Image:
 
 
 def _restore_from_tray():
-    """Shows the main window and brings it to focus. Thread-safe.
-
-    Uses a named inner function instead of a lambda tuple since pystray's
-    Linux GTK backend can mishandle multi-expression lambdas posted to the
-    tkinter event queue. The topmost trick forces focus past the window
-    manager's focus-stealing prevention on Linux and macOS.
-    """
-    def _do_restore():
-        app.deiconify()
-        app.lift()
-        app.attributes("-topmost", True)
-        app.after(200, lambda: app.attributes("-topmost", False))
-        app.focus_force()
-
-    app.after(0, _do_restore)
+    """Shows the main window and brings it to focus. Thread-safe."""
+    app.after(0, lambda: (
+        app.deiconify(),
+        app.lift(),
+        app.focus_force(),
+    ))
 
 
 def _tray_check_now():
@@ -706,38 +725,15 @@ def _set_window_icon():
                 photo = ImageTk.PhotoImage(img)
                 app.iconphoto(True, photo)
                 app._icon_ref = photo
-                # Dock icon on macOS is handled by the .icns file embedded in the compiled build
-
     except Exception:
         pass
-
-
-# ---------------------------------------------------------------------------
-# Linux desktop entry installer
-# ---------------------------------------------------------------------------
-
-def _install_linux_desktop_entry():
-    """Writes ~/.local/share/applications/betterfox-updater.desktop on Linux.
-
-    Called unconditionally on startup — finds the icon itself so it is not
-    dependent on _set_window_icon succeeding first.
-    """
-    import platform as _platform
-    if _platform.system() != "Linux":
-        return
-    icon_path = (
-        _find_icon_path("AppIcon1024.png")
-        or _find_icon_path("favicon.ico")
-        or ""
-    )
-    install_linux_desktop_entry(icon_path)
 
 
 # ---------------------------------------------------------------------------
 # GUI layout
 # ---------------------------------------------------------------------------
 
-app = ctk.CTk(className="BetterfoxUpdater")
+app = ctk.CTk()
 _set_window_icon()
 
 # Withdraw before the event loop if start_minimized is configured —
@@ -779,6 +775,18 @@ profile_menu = ctk.CTkOptionMenu(
     command=_on_profile_change, width=300,
 )
 profile_menu.pack(side="left")
+
+open_folder_button = ctk.CTkButton(
+    profile_frame,
+    text="📂",
+    width=36,
+    font=("Arial", 14),
+    fg_color="transparent",
+    hover_color="gray",
+    border_width=0,
+    command=_open_profile_folder,
+)
+open_folder_button.pack(side="left", padx=(6, 0))
 
 # Status
 status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="white")
@@ -851,7 +859,6 @@ app.after(450, _load_interval_setting)
 app.after(460, _load_start_minimized_setting)
 app.after(470, _load_start_with_system_setting)
 app.after(500, lambda: threading.Thread(target=_run_app_update_check, daemon=True).start())
-app.after(550, _install_linux_desktop_entry)
 app.after(600, _setup_tray)
 app.after(700, lambda: threading.Thread(target=_schedule_loop, daemon=True).start())
 

@@ -290,6 +290,56 @@ def parse_pref_names(user_js_content: str) -> set[str]:
     return set(re.findall(r'user_pref\("([^"]+)"', user_js_content))
 
 
+def parse_prefs(user_js_content: str) -> dict[str, str]:
+    """Extracts all pref name→value pairs from a user.js content string."""
+    return dict(re.findall(r'user_pref\("([^"]+)",\s*([^)]+)\)', user_js_content))
+
+
+def diff_prefs(old_content: str, new_content: str) -> dict:
+    """Compares two user.js content strings and returns a diff summary.
+
+    Returns a dict with keys:
+        added   — prefs in new but not old
+        removed — prefs in old but not new
+        changed — prefs in both but with a different value
+    """
+    old = parse_prefs(old_content)
+    new = parse_prefs(new_content)
+
+    old_keys = set(old)
+    new_keys = set(new)
+
+    return {
+        "added":   {k: new[k] for k in new_keys - old_keys},
+        "removed": {k: old[k] for k in old_keys - new_keys},
+        "changed": {
+            k: {"old": old[k], "new": new[k]}
+            for k in old_keys & new_keys
+            if old[k] != new[k]
+        },
+    }
+
+
+def print_diff_summary(diff: dict) -> None:
+    """Prints a human-readable diff summary to stdout."""
+    added   = len(diff["added"])
+    removed = len(diff["removed"])
+    changed = len(diff["changed"])
+
+    if not any([added, removed, changed]):
+        print("No pref changes detected.")
+        return
+
+    print("── Pref changes ──────────────────")
+    if added:
+        print(f"  + {added} pref{'s' if added != 1 else ''} added")
+    if changed:
+        print(f"  ~ {changed} pref{'s' if changed != 1 else ''} changed")
+    if removed:
+        print(f"  - {removed} pref{'s' if removed != 1 else ''} removed")
+    print("──────────────────────────────────")
+
+
 def clean_stale_prefs(old_content: str, new_content: str, profile_path: str) -> None:
     """Removes from prefs.js any prefs that existed in the old user.js but not the new one.
 
@@ -528,7 +578,7 @@ def save_last_checked(base_dir: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Startup registration (Windows + Linux)
+# Startup registration (Windows + Linux + macOS)
 # ---------------------------------------------------------------------------
 
 _SYSTEM = platform.system()
@@ -632,47 +682,6 @@ def _get_start_with_system_linux() -> bool:
     return os.path.exists(_AUTOSTART_FILE)
 
 
-# --- Linux application desktop entry (taskbar icon) ---
-
-_APPLICATIONS_DIR = os.path.expanduser("~/.local/share/applications")
-_DESKTOP_APP_FILE = os.path.join(_APPLICATIONS_DIR, "betterfox-updater.desktop")
-
-_APP_DESKTOP_TEMPLATE = """[Desktop Entry]
-Type=Application
-Name=Betterfox Updater
-Exec={exec_cmd}
-Icon={icon_path}
-Comment=Automatically update Betterfox user.js for Firefox
-Categories=Utility;
-StartupWMClass=Betterfoxupdater
-"""
-
-
-def install_linux_desktop_entry(icon_path: str) -> None:
-    """Writes a .desktop file to ~/.local/share/applications/ so the
-    taskbar shows the correct icon and associates it with the running window.
-
-    Safe to call on every startup — overwrites if already present so the
-    Exec path stays current when the app is moved.
-    """
-    if platform.system() != "Linux":
-        return
-    try:
-        os.makedirs(_APPLICATIONS_DIR, exist_ok=True)
-        with open(_DESKTOP_APP_FILE, "w", encoding="utf-8") as f:
-            f.write(_APP_DESKTOP_TEMPLATE.format(
-                exec_cmd=_get_startup_command(),
-                icon_path=icon_path,
-            ))
-        # Refresh the desktop database so the icon is picked up immediately
-        subprocess.run(
-            ["update-desktop-database", _APPLICATIONS_DIR],
-            capture_output=True, timeout=5,
-        )
-    except Exception as e:
-        print(f"  [warn]  Could not install desktop entry: {e}")
-
-
 # --- macOS (LaunchAgent plist) ---
 
 _LAUNCHAGENTS_DIR  = os.path.expanduser("~/Library/LaunchAgents")
@@ -700,7 +709,6 @@ _PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def _get_plist_args() -> str:
-    """Returns the <array> contents for ProgramArguments."""
     if getattr(sys, "frozen", False):
         return f"        <string>{sys.executable}</string>"
     app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
@@ -720,7 +728,6 @@ def _set_start_with_system_macos(enabled: bool) -> bool:
                     label=_LAUNCHAGENT_LABEL,
                     args=_get_plist_args(),
                 ))
-            # Load the agent so it takes effect without a logout
             subprocess.run(
                 ["launchctl", "load", _LAUNCHAGENT_FILE],
                 capture_output=True, timeout=5,
@@ -745,6 +752,41 @@ def _set_start_with_system_macos(enabled: bool) -> bool:
 
 def _get_start_with_system_macos() -> bool:
     return os.path.exists(_LAUNCHAGENT_FILE)
+
+
+# --- Linux application desktop entry (taskbar icon) ---
+
+_APPLICATIONS_DIR = os.path.expanduser("~/.local/share/applications")
+_DESKTOP_APP_FILE = os.path.join(_APPLICATIONS_DIR, "betterfox-updater.desktop")
+
+_APP_DESKTOP_TEMPLATE = """[Desktop Entry]
+Type=Application
+Name=Betterfox Updater
+Exec={exec_cmd}
+Icon={icon_path}
+Comment=Automatically update Betterfox user.js for Firefox
+Categories=Utility;
+StartupWMClass=Betterfoxupdater
+"""
+
+
+def install_linux_desktop_entry(icon_path: str) -> None:
+    """Writes a .desktop file to ~/.local/share/applications/ for taskbar icon support."""
+    if platform.system() != "Linux":
+        return
+    try:
+        os.makedirs(_APPLICATIONS_DIR, exist_ok=True)
+        with open(_DESKTOP_APP_FILE, "w", encoding="utf-8") as f:
+            f.write(_APP_DESKTOP_TEMPLATE.format(
+                exec_cmd=_get_startup_command(),
+                icon_path=icon_path,
+            ))
+        subprocess.run(
+            ["update-desktop-database", _APPLICATIONS_DIR],
+            capture_output=True, timeout=5,
+        )
+    except Exception as e:
+        print(f"  [warn]  Could not install desktop entry: {e}")
 
 
 # --- Platform-agnostic wrappers (used by the GUI) ---
@@ -857,6 +899,12 @@ def main(profile_path: str | None = None):
     if os.path.exists(target_file):
         with open(target_file, "r", encoding="utf-8") as f:
             old_user_js_content = f.read()
+
+    # Show diff summary
+    if old_user_js_content:
+        diff = diff_prefs(old_user_js_content, user_js_content)
+        print_diff_summary(diff)
+        print()
 
     # Clean up prefs removed in this update
     print("Running migration...")

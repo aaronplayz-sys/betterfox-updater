@@ -12,8 +12,15 @@ Images below is a preview of what the app looks like on Windows 11, looks are si
 
 ## ⚠️ Antivirus Notice
 
-The macOS executable may be flagged by Microsoft Defender as a false positive. This is a known issue with unsigned Python executables built with PyInstaller — the binary is not malicious. The Windows executable has been patched in attempt to avoid this. If you are concerned, you can verify the build yourself by running from source via the developer setup below, or inspect the full source code in this repo.
+Some antivirus engines may flag this app as suspicious. This is a known false positive with unsigned Python executables. The binary is not malicious. All reported detections have been investigated and confirmed clean by several vendors.
 
+Microsoft Defender (Windows): The PyInstaller bootloader is rebuilt from source during CI to avoid the common Wacatac.B!ml heuristic signature. If you still see a warning, submit a false positive report at [microsoft.com/en-us/wdsi/filesubmission](https://www.microsoft.com/en-us/wdsi/filesubmission).
+
+Microsoft Defender (macOS): Unsigned macOS binaries are more likely to trigger heuristic scanners. Submit a false positive report at the same link above if flagged.
+
+Bitdefender ATC4: the Start with System feature writes to the Windows registry (HKCU\Run) to register the app at login, which behavioral engines can flag as a persistence mechanism. This has been confirmed clean by Bitdefender. If flagged, add the executable to Bitdefender's exceptions under Settings → Antivirus → Exceptions, or submit a false positive report at [bitdefender.com/consumer/support/answer/29358.](https://www.bitdefender.com/consumer/support/answer/29358/)
+
+If you are concerned about any detection, you can verify the build yourself by running from source via the developer setup below, or inspect the full source code and CI workflow in this repo.
 ## ✨ Key Features
 
 - **Intelligent Profile Detection**: Automatically locates the default-release Firefox profile across Windows, MacOS, and Linux.

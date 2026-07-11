@@ -52,6 +52,8 @@ jobs:
           --onefile
           --collect-all customtkinter
           --hidden-import psutil
+          --hidden-import pystray
+          --hidden-import plyer
           --icon assets/favicon.ico
           --add-data "assets/favicon.ico;."
           --name BetterfoxUpdater
@@ -114,6 +116,8 @@ jobs:
           --onefile
           --collect-all customtkinter
           --hidden-import psutil
+          --hidden-import pystray
+          --hidden-import plyer
           --icon assets/AppIcon.icns
           --add-data "assets/AppIcon1024.png:."
           --name BetterfoxUpdater
@@ -153,13 +157,54 @@ jobs:
           --onefile
           --collect-all customtkinter
           --hidden-import psutil
+          --hidden-import pystray
+          --hidden-import plyer
           --icon assets/AppIcon1024.png
           --add-data "assets/AppIcon1024.png:."
           --name BetterfoxUpdater-Linux
           app.py
 
+      # --- AppImage packaging ---
+      # Bundles the binary into the standard Linux desktop distribution format.
+      # No system dependencies required by the end user beyond FUSE (present
+      # on nearly all modern distros) — the AppImage is fully self-contained.
+      - name: Download appimagetool
+        run: |
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Assemble AppDir
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp dist/BetterfoxUpdater-Linux AppDir/usr/bin/
+          cp assets/AppIcon1024.png AppDir/betterfox-updater.png
+
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          exec "${HERE}/usr/bin/BetterfoxUpdater-Linux" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+
+          cat > AppDir/betterfox-updater.desktop << 'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Betterfox Updater
+          Exec=BetterfoxUpdater-Linux
+          Icon=betterfox-updater
+          Comment=Automatically update Betterfox user.js for Firefox
+          Categories=Utility;
+          StartupWMClass=Betterfoxupdater
+          EOF
+
+      - name: Build AppImage
+        run: |
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir BetterfoxUpdater-x86_64.AppImage
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/BetterfoxUpdater-Linux
+          files: |
+            dist/BetterfoxUpdater-Linux
+            BetterfoxUpdater-x86_64.AppImage
           generate_release_notes: true

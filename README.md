@@ -50,13 +50,17 @@ If you are concerned about any detection, you can verify the build yourself by r
 - [x] First-run welcome screen
 - [x] Open profile folder button
 - [x] Diff view in the log
-- [ ] Replace Linux binary with an AppImage
+- [ ] Replace Linux binary with an AppImage (In-Progress, Preforming tests)
 - [ ] MacOS tray (proper native implementation)
 - [ ] Localization, would need help
 
 ## How to Use
 
 1. Download the latest release for your system from the [Releases](../../releases) page.
+   > **Linux users:** the `.AppImage` is recommended. It bundles all dependencies and requires no system packages beyond FUSE (present on most distros). The raw `BetterfoxUpdater-Linux` binary is also available if you prefer to manage dependencies yourself. Make the AppImage executable before running: `chmod +x BetterfoxUpdater-x86_64.AppImage`
+   >
+   > **Known limitation:** Native update notifications do not work under the AppImage due to how its read-only mount interacts with plyer's platform detection. Scheduled checks still run correctly. The raw `BetterfoxUpdater-Linux` binary does not have this limitation.
+
 2. Place any override files you want to customize in the same folder as the updater. If a file isn't found locally, it will be downloaded automatically.
 
    | File | Applied when |
@@ -108,7 +112,7 @@ Releases are built automatically via GitHub Actions when a version tag is pushed
 pip install pyinstaller
 ```
 ```
-pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import psutil --icon assets/favicon.ico --add-data "assets/favicon.ico;." --name BetterfoxUpdater app.py
+pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import psutil --hidden-import pystray --hidden-import plyer --icon assets/favicon.ico --add-data "assets/favicon.ico;." --name BetterfoxUpdater app.py
 ```
 
 > **Linux only**: tkinter and tray dependencies must be installed separately before building.

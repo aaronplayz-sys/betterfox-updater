@@ -10,3 +10,6 @@ __pycache__/
 /*.spec
 config.json
 .venv/
+AppDir/
+appimagetool-x86_64.AppImage
+BetterfoxUpdater-x86_64.AppImage

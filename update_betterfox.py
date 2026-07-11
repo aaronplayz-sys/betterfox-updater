@@ -37,7 +37,19 @@ MAX_BACKUPS       = 5  # How many timestamped backups to keep per profile
 # ---------------------------------------------------------------------------
 
 def get_base_path() -> str:
-    """Finds the location of the .exe or the script."""
+    """Finds the writable directory next to the running executable.
+
+    Under a normal frozen build or dev script, this is simply the directory
+    containing the executable/script. Under an AppImage, sys.executable
+    resolves to a path inside the read-only squashfs mount
+    (/tmp/.mount_XXXXXX/...), so config.json and override files can never be
+    written there. AppImage sets the APPIMAGE environment variable to the
+    real, writable location of the .AppImage file on disk — use that instead
+    when present.
+    """
+    appimage_path = os.environ.get("APPIMAGE")
+    if appimage_path:
+        return os.path.dirname(os.path.abspath(appimage_path))
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))

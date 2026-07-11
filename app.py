@@ -374,7 +374,14 @@ def _setup_tray():
 # ---------------------------------------------------------------------------
 
 def _send_notification(title: str, message: str):
-    """Sends a native OS notification via plyer."""
+    """Sends a native OS notification via plyer.
+
+    If plyer fails at runtime (e.g. its dynamic platform module resolution
+    breaks inside a read-only AppImage mount), PLYER_AVAILABLE is flipped
+    off so subsequent calls skip straight past without retrying and
+    re-printing the same warning on every scheduled check.
+    """
+    global PLYER_AVAILABLE
     if not PLYER_AVAILABLE:
         return
     try:
@@ -386,8 +393,9 @@ def _send_notification(title: str, message: str):
             app_icon=icon_path or "",
             timeout=10,
         )
-    except Exception:
-        pass  # Never crash over a notification
+    except Exception as e:
+        print(f"  [warn]  Notification failed, disabling for this session: {e}")
+        PLYER_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------

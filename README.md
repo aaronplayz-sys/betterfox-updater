@@ -50,7 +50,7 @@ If you are concerned about any detection, you can verify the build yourself by r
 - [x] First-run welcome screen
 - [x] Open profile folder button
 - [x] Diff view in the log
-- [ ] Replace Linux binary with an AppImage (In-Progress, Preforming tests)
+- [x] Replace Linux binary with an AppImage (added along with binary, not replaced)
 - [ ] MacOS tray (proper native implementation)
 - [ ] Localization, would need help
 

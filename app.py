@@ -68,6 +68,20 @@ class QueueStream:
 
 log_queue: queue.Queue = queue.Queue()
 
+# Callbacks that must run on the main thread. Used instead of app.after(0, fn)
+# directly, as a defensive pattern for background-thread-originating UI
+# updates. app.mainloop() runs normally on every platform, so app.after(0, fn)
+# would actually work fine directly — this queue is kept anyway since it's a
+# clean, uniform pattern already wired through every call site, drained by
+# both _poll_queue (main loop) with no extra cost.
+_main_thread_calls: queue.Queue = queue.Queue()
+
+
+def _call_on_main(fn):
+    """Schedules fn to run on the main thread. Safe to call from any thread,
+    on any platform."""
+    _main_thread_calls.put(fn)
+
 
 # ---------------------------------------------------------------------------
 # Queue poller
@@ -79,6 +93,18 @@ def _poll_queue():
             text = log_queue.get_nowait()
             log_box.insert("end", text)
             log_box.see("end")
+    except queue.Empty:
+        pass
+    # Drain any callbacks queued via _call_on_main(). Harmless no-op on
+    # Windows/Linux where app.after(0, ...) already works directly, but
+    # kept here too so _call_on_main() behaves identically everywhere.
+    try:
+        while True:
+            fn = _main_thread_calls.get_nowait()
+            try:
+                fn()
+            except Exception:
+                pass
     except queue.Empty:
         pass
     app.after(100, _poll_queue)
@@ -158,7 +184,7 @@ def _open_profile_folder():
 # ---------------------------------------------------------------------------
 
 def _run_version_check():
-    app.after(0, lambda: version_label.configure(
+    _call_on_main(lambda: version_label.configure(
         text="Checking for updates...", text_color="gray"
     ))
     installed = get_installed_version(get_base_path())
@@ -188,7 +214,7 @@ def _run_version_check():
                 text_color="#FFA500",
             )
 
-    app.after(0, _update)
+    _call_on_main(_update)
 
 
 def _start_version_check():
@@ -260,7 +286,7 @@ def _run_app_update_check():
     if not latest:
         return
     if latest != APP_VERSION:
-        app.after(0, lambda: _show_app_update_banner(latest))
+        _call_on_main(lambda: _show_app_update_banner(latest))
 
 
 def _show_app_update_banner(latest: str):
@@ -306,7 +332,7 @@ def _load_tray_image() -> Image.Image:
 
 def _restore_from_tray():
     """Shows the main window and brings it to focus. Thread-safe."""
-    app.after(0, lambda: (
+    _call_on_main(lambda: (
         app.deiconify(),
         app.lift(),
         app.focus_force(),
@@ -318,12 +344,30 @@ def _tray_check_now():
     threading.Thread(target=_background_check, daemon=True).start()
 
 
+def _stop_schedule_thread(timeout: float = 3.0) -> None:
+    """Signals the schedule loop to exit and waits for it to actually finish.
+
+    _quit_event.wait() returns immediately once the event is set, so the
+    loop notices within milliseconds — but without an explicit join() the
+    interpreter can start finalizing before that background thread has
+    actually woken up and returned. If it wakes up mid-finalization and
+    tries to touch Python/GIL state, the process aborts with a fatal
+    "PyEval_RestoreThread ... GIL released" error rather than a normal,
+    catchable Python exception. Joining with a short timeout guarantees
+    the thread is fully done (or at worst we wait timeout seconds) before
+    anything calls destroy()/quit_application().
+    """
+    _quit_event.set()
+    if _schedule_thread is not None and _schedule_thread.is_alive():
+        _schedule_thread.join(timeout=timeout)
+
+
 def _quit_app():
     """Cleanly shuts down the schedule loop, tray icon, and main window."""
-    _quit_event.set()
+    _stop_schedule_thread()
     if _tray_icon:
         _tray_icon.stop()
-    app.after(0, app.destroy)
+    _call_on_main(app.destroy)
 
 
 def _minimize_to_tray():
@@ -336,7 +380,10 @@ def _setup_tray():
 
     Skipped on macOS — pystray's AppKit backend conflicts with tkinter's
     main thread ownership of the NSApplication run loop, causing EXC_BREAKPOINT.
-    The close button exits normally on macOS as a result.
+    A rumps-based merged run loop was also attempted and reverted after
+    repeated crashes (thread-safety, reentrancy, and finalization-order
+    failures) — mixing two Cocoa-integrated event loops on one thread proved
+    too fragile. The close button exits normally on macOS as a result.
     """
     import platform as _platform
     if _platform.system() == "Darwin":
@@ -413,7 +460,7 @@ def _background_check():
         return
 
     # Refresh the version label on the main thread
-    app.after(0, _start_version_check)
+    _call_on_main(_start_version_check)
 
     if not installed:
         _send_notification(
@@ -505,10 +552,10 @@ def _run_update(profile_path: str):
     sys.stdout = QueueStream(log_queue)
     try:
         run_update_logic(profile_path=profile_path)
-        app.after(0, _on_update_success)
+        _call_on_main(_on_update_success)
     except Exception as e:
         log_queue.put(f"\n[ERROR]: {e}\n")
-        app.after(0, _on_failure)
+        _call_on_main(_on_failure)
     finally:
         sys.stdout = old_stdout
 
@@ -566,10 +613,10 @@ def _run_restore(backup_path: str, profile_path: str):
     sys.stdout = QueueStream(log_queue)
     try:
         success = restore_backup(backup_path, profile_path)
-        app.after(0, _on_restore_success if success else _on_failure)
+        _call_on_main(_on_restore_success if success else _on_failure)
     except Exception as e:
         log_queue.put(f"\n[ERROR]: {e}\n")
-        app.after(0, _on_failure)
+        _call_on_main(_on_failure)
     finally:
         sys.stdout = old_stdout
 
@@ -868,11 +915,21 @@ app.after(460, _load_start_minimized_setting)
 app.after(470, _load_start_with_system_setting)
 app.after(500, lambda: threading.Thread(target=_run_app_update_check, daemon=True).start())
 app.after(600, _setup_tray)
-app.after(700, lambda: threading.Thread(target=_schedule_loop, daemon=True).start())
+_schedule_thread: Optional[threading.Thread] = None
+
+
+def _start_schedule_loop():
+    global _schedule_thread
+    _schedule_thread = threading.Thread(target=_schedule_loop, daemon=True)
+    _schedule_thread.start()
+
+
+app.after(700, _start_schedule_loop)
 
 # Show welcome screen on first run
 _cfg = load_config(get_base_path())
 if _cfg.get("first_run", True):
     app.after(800, show_welcome_screen)
+
 
 app.mainloop()

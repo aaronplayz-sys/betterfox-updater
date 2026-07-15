@@ -4,4 +4,3 @@ pillow
 psutil
 pystray
 plyer
-rumps; sys_platform == "darwin"

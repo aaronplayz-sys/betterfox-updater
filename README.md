@@ -65,6 +65,11 @@ Support for forks may be added in a future version, see the [To-do](#to-do) list
 - [ ] MacOS tray (proper native implementation) [Borked, may revisit in the future]
 - [ ] Localization, would need help
 - [ ] Support for Firefox forks (LibreWolf, Waterfox, Zen Browser, etc.) and portable installs
+- [ ] Proper settings window, dedicated settings tab or dialog to give room to grow without cluttering the primary sync/update screen
+- [ ] Rollback safety net, dry-run showing exactly what would change before committing
+- [ ] Update check on the log itself, a small "X days since last check" or "last synced: <date>" in the main window
+- [ ] Dark/light theme toggle
+- [ ] Export/import settings, the ability to backup config.json and override files as a zip
 
 ## How to Use
 

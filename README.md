@@ -21,6 +21,17 @@ Microsoft Defender (macOS): Unsigned macOS binaries are more likely to trigger h
 Bitdefender ATC4: the Start with System feature writes to the Windows registry (HKCU\Run) to register the app at login, which behavioral engines can flag as a persistence mechanism. This has been confirmed clean by Bitdefender. If flagged, add the executable to Bitdefender's exceptions under Settings → Antivirus → Exceptions, or submit a false positive report at [bitdefender.com/consumer/support/answer/29358.](https://www.bitdefender.com/consumer/support/answer/29358/)
 
 If you are concerned about any detection, you can verify the build yourself by running from source via the developer setup below, or inspect the full source code and CI workflow in this repo.
+
+## 🦊 Supported Browsers
+
+This app currently only detects and updates a **standard, vanilla installation of Firefox**. It locates your profile via Firefox's own `profiles.ini`, which forks and portable builds don't always populate the same way.
+
+**Not currently supported:**
+- Firefox forks (LibreWolf, Waterfox, Zen Browser, etc.)
+- Portable / standalone Firefox builds that don't write to the usual profile locations
+
+Support for forks may be added in a future version, see the [To-do](#to-do) list below. If you'd like to help test or contribute detection logic for a specific fork, please open an issue or PR.
+
 ## ✨ Key Features
 
 - **Intelligent Profile Detection**: Automatically locates the default-release Firefox profile across Windows, MacOS, and Linux.
@@ -51,8 +62,14 @@ If you are concerned about any detection, you can verify the build yourself by r
 - [x] Open profile folder button
 - [x] Diff view in the log
 - [x] Replace Linux binary with an AppImage (added along with binary, not replaced)
-- [ ] MacOS tray (proper native implementation) (Attempted, decided not to implement)
+- [ ] MacOS tray (proper native implementation) [Borked, may revisit in the future]
 - [ ] Localization, would need help
+- [ ] Support for Firefox forks (LibreWolf, Waterfox, Zen Browser, etc.) and portable installs
+- [ ] Proper settings window, dedicated settings tab or dialog to give room to grow without cluttering the primary sync/update screen
+- [ ] Rollback safety net, dry-run showing exactly what would change before committing
+- [ ] Update check on the log itself, a small "X days since last check" or "last synced: <date>" in the main window
+- [ ] Dark/light theme toggle
+- [ ] Export/import settings, the ability to backup config.json and override files as a zip
 
 ## How to Use
 

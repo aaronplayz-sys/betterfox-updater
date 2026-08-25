@@ -2,6 +2,15 @@
 
 All notable changes to Betterfox Updater are documented here. Dates and specifics for versions prior to v1.4.0 are approximate, as formal changelogs began partway through development.
 
+## v1.9.0
+### Added
+- Settings window consolidating update interval, start minimized, and start with system controls.
+- "Last checked" timestamp displayed in Settings, refreshed after every check.
+- Quit App button in Settings — an in-GUI way to exit that doesn't depend on the system tray.
+### Fixed
+- Minimizing to tray on Linux now uses `iconify()` instead of `withdraw()`, keeping a taskbar entry as a fallback if the tray icon is unresponsive on some desktop environments (reported on XFCE).
+- Added `[tray]` diagnostic logging (desktop environment, pystray backend) to help triage future tray-related bug reports.
+
 ## v1.8.2
 ### Fixed
 - AppImage builds now write `config.json` and override files to the writable directory containing the `.AppImage` itself, instead of failing inside the read-only mount.

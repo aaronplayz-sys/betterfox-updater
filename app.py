@@ -68,20 +68,6 @@ class QueueStream:
 
 log_queue: queue.Queue = queue.Queue()
 
-# Callbacks that must run on the main thread. Used instead of app.after(0, fn)
-# directly, as a defensive pattern for background-thread-originating UI
-# updates. app.mainloop() runs normally on every platform, so app.after(0, fn)
-# would actually work fine directly — this queue is kept anyway since it's a
-# clean, uniform pattern already wired through every call site, drained by
-# both _poll_queue (main loop) with no extra cost.
-_main_thread_calls: queue.Queue = queue.Queue()
-
-
-def _call_on_main(fn):
-    """Schedules fn to run on the main thread. Safe to call from any thread,
-    on any platform."""
-    _main_thread_calls.put(fn)
-
 
 # ---------------------------------------------------------------------------
 # Queue poller
@@ -93,18 +79,6 @@ def _poll_queue():
             text = log_queue.get_nowait()
             log_box.insert("end", text)
             log_box.see("end")
-    except queue.Empty:
-        pass
-    # Drain any callbacks queued via _call_on_main(). Harmless no-op on
-    # Windows/Linux where app.after(0, ...) already works directly, but
-    # kept here too so _call_on_main() behaves identically everywhere.
-    try:
-        while True:
-            fn = _main_thread_calls.get_nowait()
-            try:
-                fn()
-            except Exception:
-                pass
     except queue.Empty:
         pass
     app.after(100, _poll_queue)
@@ -184,7 +158,7 @@ def _open_profile_folder():
 # ---------------------------------------------------------------------------
 
 def _run_version_check():
-    _call_on_main(lambda: version_label.configure(
+    app.after(0, lambda: version_label.configure(
         text="Checking for updates...", text_color="gray"
     ))
     installed = get_installed_version(get_base_path())
@@ -214,7 +188,7 @@ def _run_version_check():
                 text_color="#FFA500",
             )
 
-    _call_on_main(_update)
+    app.after(0, _update)
 
 
 def _start_version_check():
@@ -286,7 +260,7 @@ def _run_app_update_check():
     if not latest:
         return
     if latest != APP_VERSION:
-        _call_on_main(lambda: _show_app_update_banner(latest))
+        app.after(0, lambda: _show_app_update_banner(latest))
 
 
 def _show_app_update_banner(latest: str):
@@ -332,7 +306,7 @@ def _load_tray_image() -> Image.Image:
 
 def _restore_from_tray():
     """Shows the main window and brings it to focus. Thread-safe."""
-    _call_on_main(lambda: (
+    app.after(0, lambda: (
         app.deiconify(),
         app.lift(),
         app.focus_force(),
@@ -344,35 +318,30 @@ def _tray_check_now():
     threading.Thread(target=_background_check, daemon=True).start()
 
 
-def _stop_schedule_thread(timeout: float = 3.0) -> None:
-    """Signals the schedule loop to exit and waits for it to actually finish.
-
-    _quit_event.wait() returns immediately once the event is set, so the
-    loop notices within milliseconds — but without an explicit join() the
-    interpreter can start finalizing before that background thread has
-    actually woken up and returned. If it wakes up mid-finalization and
-    tries to touch Python/GIL state, the process aborts with a fatal
-    "PyEval_RestoreThread ... GIL released" error rather than a normal,
-    catchable Python exception. Joining with a short timeout guarantees
-    the thread is fully done (or at worst we wait timeout seconds) before
-    anything calls destroy()/quit_application().
-    """
-    _quit_event.set()
-    if _schedule_thread is not None and _schedule_thread.is_alive():
-        _schedule_thread.join(timeout=timeout)
-
-
 def _quit_app():
     """Cleanly shuts down the schedule loop, tray icon, and main window."""
-    _stop_schedule_thread()
+    _quit_event.set()
     if _tray_icon:
         _tray_icon.stop()
-    _call_on_main(app.destroy)
+    app.after(0, app.destroy)
 
 
 def _minimize_to_tray():
-    """Hides the window and ensures the tray icon is running."""
-    app.withdraw()
+    """Hides the window when minimizing to tray.
+
+    Uses withdraw() on Windows/macOS, where tray click-to-restore is
+    reliable. Uses iconify() on Linux instead — this keeps a taskbar/
+    window-list entry visible, so the window can still be restored via
+    the taskbar or Alt+Tab even on desktop environments where the tray
+    icon doesn't respond to clicks (see project issues — tray behaviour
+    genuinely differs across GNOME/XFCE/KDE and isn't fully solved yet).
+    withdraw() would hide the window with no fallback path back to it.
+    """
+    import platform as _platform
+    if _platform.system() == "Linux":
+        app.iconify()
+    else:
+        app.withdraw()
 
 
 def _setup_tray():
@@ -380,16 +349,22 @@ def _setup_tray():
 
     Skipped on macOS — pystray's AppKit backend conflicts with tkinter's
     main thread ownership of the NSApplication run loop, causing EXC_BREAKPOINT.
-    A rumps-based merged run loop was also attempted and reverted after
-    repeated crashes (thread-safety, reentrancy, and finalization-order
-    failures) — mixing two Cocoa-integrated event loops on one thread proved
-    too fragile. The close button exits normally on macOS as a result.
+    The close button exits normally on macOS as a result.
     """
     import platform as _platform
-    if _platform.system() == "Darwin":
+    system = _platform.system()
+
+    if system == "Darwin":
         # Revert to normal close behaviour on macOS
         app.protocol("WM_DELETE_WINDOW", _quit_app)
         return
+
+    # Diagnostic info — helps triage tray issues reported on Linux desktop
+    # environments other than the ones already tested (GNOME/XFCE/KDE tray
+    # behaviour genuinely differs; see project issues for examples).
+    desktop_env = os.environ.get("XDG_CURRENT_DESKTOP", "unknown")
+    print(f"  [tray]  Platform: {system}, Desktop: {desktop_env}")
+    print(f"  [tray]  pystray backend: {pystray.Icon.__module__}")
 
     global _tray_icon
 
@@ -414,6 +389,7 @@ def _setup_tray():
     _tray_icon.default_action = lambda icon, item: _restore_from_tray()
 
     threading.Thread(target=_tray_icon.run, daemon=True).start()
+
 
 
 # ---------------------------------------------------------------------------
@@ -455,12 +431,13 @@ def _background_check():
     installed = get_installed_version(base_dir)
     latest    = get_latest_version()
     save_last_checked(base_dir)
+    app.after(0, _refresh_last_checked_label)
 
     if not latest:
         return
 
     # Refresh the version label on the main thread
-    _call_on_main(_start_version_check)
+    app.after(0, _start_version_check)
 
     if not installed:
         _send_notification(
@@ -493,9 +470,13 @@ def _on_interval_change(choice: str):
 
 
 def _load_interval_setting():
+    """Reads check_interval from config. Updates the settings window's
+    dropdown too, if that window is currently open."""
     cfg      = load_config(get_base_path())
     interval = cfg.get("check_interval", "weekly")
-    interval_menu.set(KEY_TO_LABEL.get(interval, "Weekly"))
+    label    = KEY_TO_LABEL.get(interval, "Weekly")
+    if _settings_widgets["interval_menu"] is not None:
+        _settings_widgets["interval_menu"].set(label)
 
 
 # ---------------------------------------------------------------------------
@@ -536,11 +517,15 @@ def _on_start_with_system_toggle():
 
 
 def _load_start_with_system_setting():
+    """Reads the current OS registration state into the shared IntVar.
+    Updates the settings window's checkbox state too, if open."""
     if START_WITH_SYSTEM_SUPPORTED:
         start_with_system_var.set(1 if get_start_with_system() else 0)
-        start_with_system_check.configure(state="normal")
+        if _settings_widgets["start_with_system_check"] is not None:
+            _settings_widgets["start_with_system_check"].configure(state="normal")
     else:
-        start_with_system_check.configure(state="disabled")
+        if _settings_widgets["start_with_system_check"] is not None:
+            _settings_widgets["start_with_system_check"].configure(state="disabled")
 
 
 # ---------------------------------------------------------------------------
@@ -552,10 +537,10 @@ def _run_update(profile_path: str):
     sys.stdout = QueueStream(log_queue)
     try:
         run_update_logic(profile_path=profile_path)
-        _call_on_main(_on_update_success)
+        app.after(0, _on_update_success)
     except Exception as e:
         log_queue.put(f"\n[ERROR]: {e}\n")
-        _call_on_main(_on_failure)
+        app.after(0, _on_failure)
     finally:
         sys.stdout = old_stdout
 
@@ -613,10 +598,10 @@ def _run_restore(backup_path: str, profile_path: str):
     sys.stdout = QueueStream(log_queue)
     try:
         success = restore_backup(backup_path, profile_path)
-        _call_on_main(_on_restore_success if success else _on_failure)
+        app.after(0, _on_restore_success if success else _on_failure)
     except Exception as e:
         log_queue.put(f"\n[ERROR]: {e}\n")
-        _call_on_main(_on_failure)
+        app.after(0, _on_failure)
     finally:
         sys.stdout = old_stdout
 
@@ -656,6 +641,141 @@ def _on_restore_success():
 def _on_failure():
     status_label.configure(text="Operation Failed", text_color="red")
     _set_buttons("normal")
+
+
+# ---------------------------------------------------------------------------
+# Settings window
+# ---------------------------------------------------------------------------
+
+# Tracks the settings window's live widgets so functions that update
+# settings (e.g. after a background check or a schedule run) can refresh
+# them if the window happens to be open, without erroring if it isn't.
+_settings_widgets = {
+    "interval_menu": None,
+    "start_with_system_check": None,
+    "last_checked_label": None,
+}
+
+
+def _format_last_checked() -> str:
+    """Returns a human-readable 'Last checked: ...' string from config,
+    or a placeholder if no check has ever run."""
+    cfg = load_config(get_base_path())
+    raw = cfg.get("last_checked")
+    if not raw:
+        return "Last checked: never"
+    try:
+        dt = __import__("datetime").datetime.fromisoformat(raw)
+        return f"Last checked: {dt.strftime('%Y-%m-%d  %H:%M')}"
+    except ValueError:
+        return "Last checked: unknown"
+
+
+def _refresh_last_checked_label():
+    """Updates the settings window's last-checked label if that window
+    is currently open. Safe to call from any thread that also uses
+    app.after(0, ...) to reach the main thread, same as other UI refreshes."""
+    if _settings_widgets["last_checked_label"] is not None:
+        _settings_widgets["last_checked_label"].configure(text=_format_last_checked())
+
+
+def show_settings_window():
+    """Displays the settings window with update interval, start minimized,
+    and start with system controls. Non-modal — the main window stays usable."""
+    win = ctk.CTkToplevel(app)
+    win.title("Settings")
+    win.geometry("420x360")
+    win.resizable(False, False)
+
+    # Keep it on top of the main window without blocking interaction with it
+    win.transient(app)
+
+    app.update_idletasks()
+    x = app.winfo_x() + (app.winfo_width()  - 420) // 2
+    y = app.winfo_y() + (app.winfo_height() - 360) // 2
+    win.geometry(f"+{x}+{y}")
+
+    ctk.CTkLabel(win, text="Settings", font=("Arial", 18, "bold")).pack(pady=(20, 16))
+
+    # --- Update check interval ---
+    ctk.CTkLabel(win, text="Check for updates:", font=("Arial", 13)).pack(pady=(4, 4))
+    settings_interval_menu = ctk.CTkOptionMenu(
+        win, values=INTERVAL_LABELS,
+        command=_on_interval_change, width=220,
+    )
+    settings_interval_menu.pack(pady=(0, 16))
+    _settings_widgets["interval_menu"] = settings_interval_menu
+
+    cfg      = load_config(get_base_path())
+    interval = cfg.get("check_interval", "weekly")
+    settings_interval_menu.set(KEY_TO_LABEL.get(interval, "Weekly"))
+
+    # --- Start minimized ---
+    settings_start_minimized_check = ctk.CTkCheckBox(
+        win,
+        text="Start minimized to tray",
+        font=("Arial", 13),
+        variable=start_minimized_var,
+        command=_on_start_minimized_toggle,
+    )
+    settings_start_minimized_check.pack(pady=(4, 8))
+
+    # --- Start with system ---
+    settings_start_with_system_check = ctk.CTkCheckBox(
+        win,
+        text="Start with system",
+        font=("Arial", 13),
+        variable=start_with_system_var,
+        command=_on_start_with_system_toggle,
+        state="normal" if START_WITH_SYSTEM_SUPPORTED else "disabled",
+    )
+    settings_start_with_system_check.pack(pady=(0, 16))
+    _settings_widgets["start_with_system_check"] = settings_start_with_system_check
+
+    if not START_WITH_SYSTEM_SUPPORTED:
+        ctk.CTkLabel(
+            win, text="Not supported on this platform yet.",
+            font=("Arial", 11), text_color="gray"
+        ).pack(pady=(0, 8))
+
+    settings_last_checked_label = ctk.CTkLabel(
+        win, text=_format_last_checked(),
+        font=("Arial", 11), text_color="gray"
+    )
+    settings_last_checked_label.pack(side="bottom", pady=(0, 2))
+    _settings_widgets["last_checked_label"] = settings_last_checked_label
+
+    ctk.CTkLabel(
+        win, text=f"Betterfox Updater v{APP_VERSION}",
+        font=("Arial", 11), text_color="gray"
+    ).pack(side="bottom", pady=(0, 4))
+
+    def _on_settings_close():
+        _settings_widgets["interval_menu"] = None
+        _settings_widgets["start_with_system_check"] = None
+        _settings_widgets["last_checked_label"] = None
+        win.destroy()
+
+    def _on_quit_from_settings():
+        if tkmsg.askyesno("Quit Betterfox Updater", "Quit the app completely?"):
+            _quit_app()
+
+    win.protocol("WM_DELETE_WINDOW", _on_settings_close)
+
+    button_row = ctk.CTkFrame(win, fg_color="transparent")
+    button_row.pack(side="bottom", pady=(8, 0))
+
+    ctk.CTkButton(button_row, text="Close", width=120, command=_on_settings_close).pack(side="left", padx=(0, 8))
+    # A GUI-reachable quit that doesn't rely on the tray menu — some Linux
+    # desktop environments' tray icons don't respond to clicks at all,
+    # which previously left users with no way to exit besides `kill`.
+    ctk.CTkButton(
+        button_row, text="Quit App", width=120,
+        fg_color="#8B3A3A", hover_color="#A94442",
+        command=_on_quit_from_settings,
+    ).pack(side="left")
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -791,20 +911,41 @@ def _set_window_icon():
 app = ctk.CTk()
 _set_window_icon()
 
-# Withdraw before the event loop if start_minimized is configured —
-# prevents the window from flashing briefly on startup
+# Withdraw/iconify before the event loop if start_minimized is configured —
+# prevents the window from flashing briefly on startup. Linux uses iconify()
+# for the same reason as _minimize_to_tray() — keeps a taskbar entry as a
+# fallback path back into the window if the tray icon doesn't respond.
 _startup_cfg = load_config(get_base_path())
 if _startup_cfg.get("start_minimized", False):
-    app.withdraw()
+    import platform as _startup_platform_check
+    if _startup_platform_check.system() == "Linux":
+        app.iconify()
+    else:
+        app.withdraw()
 
-app.geometry("500x680")
+app.geometry("500x600")
 app.title("Betterfox Updater")
 
 # Intercept close button — minimize to tray instead of quitting
 app.protocol("WM_DELETE_WINDOW", _minimize_to_tray)
 
-# Title
-ctk.CTkLabel(app, text="Betterfox Updater", font=("Arial", 20)).pack(pady=(14, 4))
+# Title row with settings gear button
+title_frame = ctk.CTkFrame(app, fg_color="transparent")
+title_frame.pack(fill="x", padx=20, pady=(14, 4))
+
+ctk.CTkLabel(title_frame, text="Betterfox Updater", font=("Arial", 20)).pack(side="left")
+
+settings_button = ctk.CTkButton(
+    title_frame,
+    text="⚙",
+    width=36,
+    font=("Arial", 16),
+    fg_color="transparent",
+    hover_color="gray",
+    border_width=0,
+    command=show_settings_window,
+)
+settings_button.pack(side="right")
 
 # Self-update banner
 app_update_button = ctk.CTkButton(
@@ -863,43 +1004,17 @@ restore_button = ctk.CTkButton(
 )
 restore_button.pack(side="left")
 
-# Check interval selector
-ctk.CTkLabel(app, text="── Update check interval ──", text_color="white", font=("Arial", 13)).pack(pady=(14, 4))
-interval_frame = ctk.CTkFrame(app, fg_color="transparent")
-interval_frame.pack(pady=4)
-ctk.CTkLabel(interval_frame, text="Check for updates:", font=("Arial", 13)).pack(side="left", padx=(0, 8))
-interval_menu = ctk.CTkOptionMenu(
-    interval_frame, values=INTERVAL_LABELS,
-    command=_on_interval_change, width=200,
-)
-interval_menu.pack(side="left")
-
-# Start minimized checkbox
-start_minimized_var = ctk.IntVar(value=0)
-start_minimized_check = ctk.CTkCheckBox(
-    app,
-    text="Start minimized to tray",
-    font=("Arial", 13),
-    variable=start_minimized_var,
-    command=_on_start_minimized_toggle,
-)
-start_minimized_check.pack(pady=(4, 8))
-
-# Start with system checkbox — disabled on unsupported platforms (e.g. macOS)
+# --- Settings state ---
+# These IntVars are shared between the main app and whatever settings-window
+# widgets currently exist (see _settings_widgets and show_settings_window()).
+# Keeping the variables here means they persist across settings window
+# open/close cycles even though the widgets themselves get recreated each time.
+start_minimized_var   = ctk.IntVar(value=0)
 start_with_system_var = ctk.IntVar(value=0)
-start_with_system_check = ctk.CTkCheckBox(
-    app,
-    text="Start with system",
-    font=("Arial", 13),
-    variable=start_with_system_var,
-    command=_on_start_with_system_toggle,
-    state="disabled",  # Enabled after _load_start_with_system_setting runs
-)
-start_with_system_check.pack(pady=(0, 8))
 
 # Log box
-log_box = ctk.CTkTextbox(app, width=440, height=160)
-log_box.pack(pady=16, padx=20)
+log_box = ctk.CTkTextbox(app, width=440, height=220)
+log_box.pack(pady=16, padx=20, fill="both", expand=True)
 
 # ---------------------------------------------------------------------------
 # Startup
@@ -915,21 +1030,11 @@ app.after(460, _load_start_minimized_setting)
 app.after(470, _load_start_with_system_setting)
 app.after(500, lambda: threading.Thread(target=_run_app_update_check, daemon=True).start())
 app.after(600, _setup_tray)
-_schedule_thread: Optional[threading.Thread] = None
-
-
-def _start_schedule_loop():
-    global _schedule_thread
-    _schedule_thread = threading.Thread(target=_schedule_loop, daemon=True)
-    _schedule_thread.start()
-
-
-app.after(700, _start_schedule_loop)
+app.after(700, lambda: threading.Thread(target=_schedule_loop, daemon=True).start())
 
 # Show welcome screen on first run
 _cfg = load_config(get_base_path())
 if _cfg.get("first_run", True):
     app.after(800, show_welcome_screen)
-
 
 app.mainloop()

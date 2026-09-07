@@ -168,8 +168,39 @@ jobs:
       - name: Install tkinter
         run: sudo apt-get install -y python3-tk
 
+      # PyGObject (the "gi" module) provides the AppIndicator bindings pystray
+      # needs to use its most reliable Linux tray backend. actions/setup-python
+      # uses an isolated Python build under hostedtoolcache/, completely separate
+      # from apt's system Python — so `apt install python3-gi` alone does NOT
+      # make gi importable here, the same issue seen when a local venv lacks
+      # --system-site-packages. The fix is to compile PyGObject directly inside
+      # this job's venv via pip, which requires the native dev headers below.
+      #
+      # Without this, pystray silently falls back to its much less reliable
+      # Xorg backend (pystray._xorg), which is known to not respond to clicks
+      # on some desktop environments (confirmed on XFCE/Debian — see project
+      # issues). This produces a binary users can't get out of via the tray at
+      # all — see the iconify()/Quit App fallback added in app.py for the
+      # user-facing safety net, independent of this fix.
+      - name: Install PyGObject build dependencies and AppIndicator bindings
+        run: |
+          sudo apt-get install -y \
+            libgirepository1.0-dev \
+            gobject-introspection \
+            libcairo2-dev \
+            pkg-config \
+            python3-dev \
+            gir1.2-gtk-3.0 \
+            gir1.2-ayatanaappindicator3-0.1
+
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
+
+      # Compiles gi's native bindings against the headers installed above,
+      # directly inside this job's venv — making it importable by the same
+      # Python that PyInstaller freezes, unlike the apt-installed system copy.
+      - name: Install PyGObject into the build venv
+        run: pip install pygobject
 
       - name: Build executable
         run: >
@@ -177,11 +208,14 @@ jobs:
           --noconsole
           --onefile
           --collect-all customtkinter
+          --collect-all gi
           --hidden-import psutil
           --hidden-import pystray
           --hidden-import plyer
+          --hidden-import gi.repository.AppIndicator3
           --icon assets/AppIcon1024.png
           --add-data "assets/AppIcon1024.png:."
+          --add-data "/usr/lib/x86_64-linux-gnu/girepository-1.0:gi_typelibs"
           --name BetterfoxUpdater-Linux
           app.py
 

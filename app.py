@@ -6,6 +6,24 @@ import threading
 import time
 import subprocess
 import webbrowser
+
+# Must run before `import pystray` below — pystray triggers gi's typelib
+# loading internally on Linux, and gi needs GI_TYPELIB_PATH set before that
+# happens. Only relevant in the frozen (PyInstaller) build: PyInstaller's
+# --add-data bundles the AppIndicator/Gtk typelib files into a
+# "gi_typelibs" folder inside the extracted app, but gi has no way to know
+# to look there unless this env var points at it explicitly. Without this,
+# gi silently fails to find AppIndicator3 even though the files are present
+# in the bundle, and pystray falls back to its far less reliable Xorg
+# backend — this was the root cause of a tray icon that didn't respond to
+# clicks at all on some Linux desktop environments (see project issues).
+if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+    _meipass = getattr(sys, "_MEIPASS", None)
+    if _meipass:
+        _typelib_dir = os.path.join(_meipass, "gi_typelibs")
+        if os.path.isdir(_typelib_dir):
+            os.environ["GI_TYPELIB_PATH"] = _typelib_dir
+
 import tkinter.messagebox as tkmsg
 import customtkinter as ctk
 from PIL import Image, ImageTk

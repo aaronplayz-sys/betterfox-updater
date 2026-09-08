@@ -2,6 +2,12 @@
 
 All notable changes to Betterfox Updater are documented here. Dates and specifics for versions prior to v1.4.0 are approximate, as formal changelogs began partway through development.
 
+## v1.10.0
+### Fixed
+- Root-caused and fixed the unresponsive Linux tray icon reported on XFCE (v1.9.0 shipped a safety net for this; this release fixes the actual cause). The Linux build now properly compiles and bundles PyGObject/AppIndicator bindings, so pystray correctly selects its `_appindicator` backend instead of silently falling back to the unreliable `_xorg` backend.
+- Fixed native notifications failing on Linux with `ModuleNotFoundError: No module named 'plyer.platforms'` — plyer's platform backend is now explicitly collected during the build, since it's loaded dynamically at runtime in a way PyInstaller can't detect automatically.
+- Installed `python-dbus` for plyer's Linux notification backend, removing a runtime fallback warning.
+
 ## v1.9.0
 ### Added
 - Settings window consolidating update interval, start minimized, and start with system controls.

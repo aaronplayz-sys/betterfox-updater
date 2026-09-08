@@ -191,7 +191,16 @@ jobs:
             pkg-config \
             python3-dev \
             gir1.2-gtk-3.0 \
-            gir1.2-ayatanaappindicator3-0.1
+            gir1.2-ayatanaappindicator3-0.1 \
+            libdbus-1-dev \
+            libdbus-glib-1-dev
+
+      # plyer's Linux notification backend uses python-dbus (the `dbus`
+      # module). Without it, plyer falls back to a less direct path — the
+      # notification still worked in testing, but this removes the runtime
+      # warning and gives plyer its intended, fully-supported backend.
+      - name: Install python-dbus into the build venv
+        run: pip install dbus-python
 
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
@@ -217,6 +226,7 @@ jobs:
           --hidden-import psutil
           --hidden-import pystray
           --collect-submodules plyer
+          --hidden-import dbus
           --hidden-import gi.repository.AppIndicator3
           --icon assets/AppIcon1024.png
           --add-data "assets/AppIcon1024.png:."

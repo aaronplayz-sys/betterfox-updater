@@ -55,7 +55,7 @@ Support for forks may be added in a future version, see the [To-do](#to-do) list
 - [x] Hardware detection to match override files to detected GPU/CPU
 - [x] Notify user that user.js has been updated and suggest to update
 - [x] Notify user that the app has been updated and suggest to update.
-- [x] Tray icon / minimize to tray (MacOS needs a diffrent solution)
+- [x] Tray icon / minimize to tray (MacOS needs a different solution)
 - [x] Scheduled auto-checks
 - [x] Start with System
 - [x] First-run welcome screen
@@ -65,8 +65,8 @@ Support for forks may be added in a future version, see the [To-do](#to-do) list
 - [ ] MacOS tray (proper native implementation) [Borked, may revisit in the future]
 - [ ] Localization, would need help
 - [ ] Support for Firefox forks (LibreWolf, Waterfox, Zen Browser, etc.) and portable installs
-- [ ] Proper settings window, dedicated settings tab or dialog to give room to grow without cluttering the primary sync/update screen
-- [ ] Rollback safety net, dry-run showing exactly what would change before committing
+- [x] Proper settings window, dedicated settings tab or dialog to give room to grow without cluttering the primary sync/update screen
+- [ ] Rollback safety net, dry-run showing exactly what would change before committing 
 - [ ] Update check on the log itself, a small "X days since last check" or "last synced: <date>" in the main window
 - [ ] Dark/light theme toggle
 - [ ] Export/import settings, the ability to backup config.json and override files as a zip

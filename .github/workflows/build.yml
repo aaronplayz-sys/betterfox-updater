@@ -216,7 +216,7 @@ jobs:
           --collect-all gi
           --hidden-import psutil
           --hidden-import pystray
-          --hidden-import plyer
+          --collect-submodules plyer
           --hidden-import gi.repository.AppIndicator3
           --icon assets/AppIcon1024.png
           --add-data "assets/AppIcon1024.png:."

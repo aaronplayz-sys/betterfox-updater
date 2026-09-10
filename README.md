@@ -67,7 +67,7 @@ Support for forks may be added in a future version, see the [To-do](#to-do) list
 - [ ] Support for Firefox forks (LibreWolf, Waterfox, Zen Browser, etc.) and portable installs
 - [x] Proper settings window, dedicated settings tab or dialog to give room to grow without cluttering the primary sync/update screen
 - [ ] Rollback safety net, dry-run showing exactly what would change before committing 
-- [ ] Update check on the log itself, a small "X days since last check" or "last synced: <date>" in the main window
+- [x] Update check on the log itself, a small "X days since last check" or "last synced: <date>" in the main window
 - [ ] Dark/light theme toggle
 - [ ] Export/import settings, the ability to backup config.json and override files as a zip
 

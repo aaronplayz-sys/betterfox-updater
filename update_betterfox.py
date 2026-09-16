@@ -8,6 +8,7 @@ import sys
 import glob
 import json
 import re
+import tempfile
 from datetime import datetime, timedelta
 
 try:
@@ -30,6 +31,42 @@ STARTUP_REG_KEY     = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_RELEASES_API    = "https://api.github.com/repos/aaronplayz-sys/betterfox-updater/releases/latest"
 CONFIG_FILE         = "config.json"
 MAX_BACKUPS       = 5  # How many timestamped backups to keep per profile
+
+
+# ---------------------------------------------------------------------------
+# Atomic file writes
+# ---------------------------------------------------------------------------
+
+def _atomic_write(path: str, content: str, encoding: str = "utf-8") -> None:
+    """Writes content to path without ever leaving a partially-written file
+    on disk, even if the process is killed or the machine loses power mid-write.
+
+    Writes to a temp file in the same directory as the target (so the final
+    os.replace() is guaranteed to be on the same filesystem, which is what
+    makes it atomic), flushes and fsyncs to force the data out of OS buffers
+    onto disk, then atomically swaps it into place. The file that exists at
+    `path` after this call is always either the complete old version or the
+    complete new version — never a half-written mix of both.
+
+    Same-directory temp file also matters for os.replace()'s atomicity
+    guarantee: a replace across different filesystems/drives is not atomic.
+    """
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".tmp_", suffix=".swap")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        # Clean up the temp file if anything went wrong before the swap —
+        # the original file at `path` is untouched either way.
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -394,8 +431,7 @@ def clean_stale_prefs(old_content: str, new_content: str, profile_path: str) -> 
             return
 
         shutil.copy2(prefs_js_path, prefs_js_path + ".backup")
-        with open(prefs_js_path, "w", encoding="utf-8") as f:
-            f.writelines(cleaned_lines)
+        _atomic_write(prefs_js_path, "".join(cleaned_lines))
         print(f"  Cleaned {cleaned_count} stale pref(s) from prefs.js. (prefs.js.backup created)")
     else:
         print("  No stale prefs found in prefs.js.")
@@ -536,11 +572,11 @@ def load_config(base_dir: str) -> dict:
 
 
 def save_config(base_dir: str, config: dict) -> None:
-    """Writes the config dict to config.json."""
+    """Writes the config dict to config.json atomically — a crash or power
+    loss mid-write can never leave a corrupted/truncated config.json."""
     config_path = os.path.join(base_dir, CONFIG_FILE)
     try:
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        _atomic_write(config_path, json.dumps(config, indent=2))
     except OSError as e:
         print(f"  [warn]  Could not save config: {e}")
 
@@ -926,8 +962,7 @@ def main(profile_path: str | None = None):
     # Backup then write
     create_backup(target_file)
 
-    with open(target_file, "w", encoding="utf-8") as f:
-        f.write(user_js_content)
+    _atomic_write(target_file, user_js_content)
 
     if latest_version:
         save_installed_version(base_dir, latest_version)

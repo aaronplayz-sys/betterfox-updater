@@ -13,3 +13,4 @@ config.json
 AppDir/
 appimagetool-x86_64.AppImage
 BetterfoxUpdater-x86_64.AppImage
+.pytest_cache/

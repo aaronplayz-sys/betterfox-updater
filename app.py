@@ -48,6 +48,8 @@ from update_betterfox import (
     save_last_checked,
     list_backups,
     restore_backup,
+    prepare_update as prepare_update_logic,
+    apply_update as apply_update_logic,
     main as run_update_logic,
 )
 
@@ -58,7 +60,7 @@ except ImportError:
     PLYER_AVAILABLE = False
 
 
-APP_VERSION   = "1.9.0"
+APP_VERSION   = "1.10.0"
 RELEASES_URL  = "https://github.com/aaronplayz-sys/betterfox-updater/releases"
 
 INTERVAL_LABELS = ["On launch only", "Daily", "Weekly", "Every 4 weeks"]
@@ -251,6 +253,7 @@ def _refresh_backup_menu():
 
 def _set_buttons(state: str):
     update_button.configure(state=state)
+    preview_button.configure(state=state)
     restore_button.configure(state=state)
     open_folder_button.configure(state=state)
     profile_menu.configure(state="disabled" if state == "disabled" else "normal")
@@ -605,6 +608,157 @@ def _on_update_success():
     _set_buttons("normal")
     _refresh_backup_menu()
     _start_version_check()
+
+
+# ---------------------------------------------------------------------------
+# Preview / dry-run
+# ---------------------------------------------------------------------------
+
+def _run_preview(profile_path: str):
+    """Runs prepare_update() in a background thread and opens the preview
+    window on the main thread once it's ready. Nothing is written to disk
+    at this point — only computed."""
+    old_stdout = sys.stdout
+    sys.stdout = QueueStream(log_queue)
+    try:
+        prepared = prepare_update_logic(profile_path=profile_path)
+        app.after(0, lambda: _on_preview_ready(prepared))
+    except Exception as e:
+        log_queue.put(f"\n[ERROR]: {e}\n")
+        app.after(0, _on_failure)
+    finally:
+        sys.stdout = old_stdout
+
+
+def start_preview():
+    profile = _get_selected_profile()
+    if not profile:
+        tkmsg.showerror("No Profile", "No Firefox profile selected.")
+        return
+
+    log_box.delete("0.0", "end")
+    status_label.configure(text="Status: Preparing preview...", text_color="blue")
+    _set_buttons("disabled")
+    threading.Thread(target=_run_preview, args=(profile["path"],), daemon=True).start()
+
+
+def _on_preview_ready(prepared: dict | None):
+    status_label.configure(text="Status: Ready", text_color="white")
+    _set_buttons("normal")
+    if prepared is None:
+        # prepare_update() already printed the reason to the log — e.g.
+        # profile not found, download failed. Nothing more to do here.
+        return
+    show_preview_window(prepared)
+
+
+def _run_apply_from_preview(prepared: dict):
+    """Commits a previously-prepared update. Runs on a background thread,
+    same pattern as _run_update(), but skips prepare_update() entirely
+    since prepared already has everything computed."""
+    old_stdout = sys.stdout
+    sys.stdout = QueueStream(log_queue)
+    try:
+        apply_update_logic(prepared)
+        app.after(0, _on_update_success)
+    except Exception as e:
+        log_queue.put(f"\n[ERROR]: {e}\n")
+        app.after(0, _on_failure)
+    finally:
+        sys.stdout = old_stdout
+
+
+def show_preview_window(prepared: dict):
+    """Displays a summary of what a sync would change, without committing
+    anything. Apply Changes commits exactly what was previewed — no
+    re-download or re-computation happens between preview and apply."""
+    win = ctk.CTkToplevel(app)
+    win.title("Preview Changes")
+    win.geometry("480x560")
+    win.resizable(False, False)
+    win.grab_set()
+
+    app.update_idletasks()
+    x = app.winfo_x() + (app.winfo_width()  - 480) // 2
+    y = app.winfo_y() + (app.winfo_height() - 560) // 2
+    win.geometry(f"+{x}+{y}")
+
+    ctk.CTkLabel(win, text="Preview Changes", font=("Arial", 18, "bold")).pack(pady=(16, 4))
+
+    # --- Version line ---
+    installed = prepared["installed_version"]
+    latest    = prepared["latest_version"]
+    if installed and latest and installed != latest:
+        version_text = f"v{installed}  →  v{latest}"
+    elif latest:
+        version_text = f"Installing v{latest}" if not installed else f"Up to date: v{latest}"
+    else:
+        version_text = "Version unknown"
+    ctk.CTkLabel(win, text=version_text, font=("Arial", 13), text_color="gray").pack(pady=(0, 4))
+
+    # --- Overrides applied ---
+    override_names = ["common-overrides.js"]
+    if prepared["os_filename"]:
+        override_names.append(prepared["os_filename"])
+    if prepared["hw_filename"]:
+        override_names.append(prepared["hw_filename"])
+    ctk.CTkLabel(
+        win, text="Overrides: " + ", ".join(override_names),
+        font=("Arial", 11), text_color="gray", wraplength=440,
+    ).pack(pady=(0, 12))
+
+    # --- Diff summary ---
+    scroll = ctk.CTkScrollableFrame(win, width=440, height=340)
+    scroll.pack(padx=20, pady=(0, 12), fill="both", expand=True)
+
+    diff    = prepared["diff"]
+    added   = diff["added"]
+    changed = diff["changed"]
+    removed = diff["removed"]
+
+    if not prepared["old_content"]:
+        ctk.CTkLabel(
+            scroll, text="No existing user.js found — this will be a first-time install.",
+            font=("Arial", 13), wraplength=400, justify="left",
+        ).pack(anchor="w", pady=(4, 8))
+    elif not any([added, changed, removed]):
+        ctk.CTkLabel(
+            scroll, text="No preference changes detected.",
+            font=("Arial", 13), text_color="gray",
+        ).pack(anchor="w", pady=(4, 8))
+    else:
+        def diff_section(title: str, items: dict, color: str, prefix: str):
+            if not items:
+                return
+            ctk.CTkLabel(
+                scroll, text=f"{title} ({len(items)})",
+                font=("Arial", 13, "bold"), text_color=color, anchor="w",
+            ).pack(fill="x", pady=(8, 2))
+            for name in sorted(items.keys()):
+                ctk.CTkLabel(
+                    scroll, text=f"  {prefix} {name}",
+                    font=("Arial", 12), anchor="w", justify="left",
+                ).pack(fill="x")
+
+        diff_section("Added",   added,   "#50C878", "+")
+        diff_section("Changed", changed, "#FFA500", "~")
+        diff_section("Removed", removed, "#E74C3C", "-")
+
+    # --- Buttons ---
+    def on_cancel():
+        win.destroy()
+
+    def on_apply():
+        win.destroy()
+        log_box.delete("0.0", "end")
+        status_label.configure(text="Status: Updating...", text_color="blue")
+        _set_buttons("disabled")
+        threading.Thread(target=_run_apply_from_preview, args=(prepared,), daemon=True).start()
+
+    button_row = ctk.CTkFrame(win, fg_color="transparent")
+    button_row.pack(pady=(0, 16))
+    ctk.CTkButton(button_row, text="Cancel", width=140, fg_color="gray", command=on_cancel).pack(side="left", padx=(0, 8))
+    ctk.CTkButton(button_row, text="Apply Changes", width=140, command=on_apply).pack(side="left")
 
 
 # ---------------------------------------------------------------------------
@@ -1006,9 +1160,16 @@ open_folder_button.pack(side="left", padx=(6, 0))
 status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="white")
 status_label.pack(pady=(8, 4))
 
-# Update button
-update_button = ctk.CTkButton(app, text="Update Now", command=start_update, width=200)
-update_button.pack(pady=4)
+# Update / Preview buttons
+button_row_main = ctk.CTkFrame(app, fg_color="transparent")
+button_row_main.pack(pady=4)
+update_button = ctk.CTkButton(button_row_main, text="Update Now", command=start_update, width=140)
+update_button.pack(side="left", padx=(0, 8))
+preview_button = ctk.CTkButton(
+    button_row_main, text="Preview Changes", command=start_preview, width=140,
+    fg_color="transparent", border_width=1,
+)
+preview_button.pack(side="left")
 
 # Restore section
 ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 13)).pack(pady=(14, 4))

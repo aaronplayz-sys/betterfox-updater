@@ -865,10 +865,20 @@ def get_start_with_system() -> bool:
 # Main sync logic
 # ---------------------------------------------------------------------------
 
-def main(profile_path: str | None = None):
+def prepare_update(profile_path: str | None = None) -> dict | None:
+    """Downloads Betterfox + overrides and computes the final user.js content
+    and diff against the current file — without writing anything to disk.
+
+    Returns a dict describing the prepared update, or None if preparation
+    failed (profile not found, download failed, etc. — the reason is
+    printed to stdout as usual). Pass the returned dict to apply_update()
+    to actually commit it. Splitting these two steps is what makes a
+    preview/dry-run screen possible: the GUI can show exactly what would
+    change before anything is written, without re-downloading or
+    re-computing when the user confirms.
+    """
     base_dir = get_base_path()
 
-    # Firefox running check
     if is_firefox_running():
         print("[warn] Firefox is currently running.")
         print("       Changes will apply, but won't take effect until Firefox restarts.\n")
@@ -876,28 +886,26 @@ def main(profile_path: str | None = None):
         print("[warn] psutil not installed — cannot check if Firefox is running.")
         print("       Run: pip install psutil\n")
 
-    # Profile detection — use provided path or auto-detect
     if not profile_path:
         profile_path = get_firefox_profile_path()
     if not profile_path:
         print("Could not locate default Firefox profile.")
-        return
+        return None
     print(f"Target profile: {profile_path}\n")
 
-    # Download Betterfox
     print("Downloading latest Betterfox user.js...")
     try:
         response = requests.get(BETTERFOX_URL, timeout=15)
     except requests.exceptions.Timeout:
         print("Download timed out. Check your internet connection and try again.")
-        return
+        return None
     except requests.exceptions.ConnectionError:
         print("Connection failed. Check your internet connection and try again.")
-        return
+        return None
 
     if response.status_code != 200:
         print(f"Download failed (HTTP {response.status_code}).")
-        return
+        return None
 
     user_js_content = response.text
 
@@ -948,9 +956,43 @@ def main(profile_path: str | None = None):
         with open(target_file, "r", encoding="utf-8") as f:
             old_user_js_content = f.read()
 
+    diff = (
+        diff_prefs(old_user_js_content, user_js_content)
+        if old_user_js_content
+        else {"added": {}, "removed": {}, "changed": {}}
+    )
+
+    return {
+        "profile_path":      profile_path,
+        "base_dir":          base_dir,
+        "target_file":       target_file,
+        "old_content":       old_user_js_content,
+        "new_content":       user_js_content,
+        "diff":              diff,
+        "latest_version":    latest_version,
+        "installed_version": installed_version,
+        "os_filename":       os_filename,
+        "hw_filename":       hw_filename,
+    }
+
+
+def apply_update(prepared: dict) -> None:
+    """Commits a previously prepared update (see prepare_update()) to disk.
+
+    Runs stale-pref migration, creates a backup, atomically writes the new
+    user.js, and records the synced version. Operates entirely on data
+    already computed by prepare_update() — no re-downloading.
+    """
+    profile_path        = prepared["profile_path"]
+    base_dir            = prepared["base_dir"]
+    target_file         = prepared["target_file"]
+    old_user_js_content = prepared["old_content"]
+    user_js_content     = prepared["new_content"]
+    diff                = prepared["diff"]
+    latest_version      = prepared["latest_version"]
+
     # Show diff summary
     if old_user_js_content:
-        diff = diff_prefs(old_user_js_content, user_js_content)
         print_diff_summary(diff)
         print()
 
@@ -961,7 +1003,6 @@ def main(profile_path: str | None = None):
 
     # Backup then write
     create_backup(target_file)
-
     _atomic_write(target_file, user_js_content)
 
     if latest_version:
@@ -969,6 +1010,18 @@ def main(profile_path: str | None = None):
         print(f"\nSuccessfully updated to v{latest_version}! Restart Firefox to apply changes.")
     else:
         print("\nSuccessfully updated user.js! Restart Firefox to apply changes.")
+
+
+def main(profile_path: str | None = None):
+    """Full sync in one call: prepare + apply back to back.
+
+    Preserves the exact behaviour of the original single-pass main() for
+    the CLI and any caller that doesn't need a preview step in between.
+    """
+    prepared = prepare_update(profile_path=profile_path)
+    if prepared is None:
+        return
+    apply_update(prepared)
 
 
 if __name__ == "__main__":

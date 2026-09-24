@@ -2,6 +2,15 @@
 
 All notable changes to Betterfox Updater are documented here. Dates and specifics for versions prior to v1.4.0 are approximate, as formal changelogs began partway through development.
 
+## v1.11.0
+### Added
+- Preview Changes (dry-run) — shows exactly what a sync would add, change, and remove before writing anything, with Cancel/Apply.
+### Changed
+- Refactored `main()` into `prepare_update()` + `apply_update()` to support the preview screen; existing update behavior is unchanged.
+### Testing
+- Added a pytest suite covering preference parsing and diff logic.
+- All writes to user.js, prefs.js, and config.json are now atomic.
+
 ## v1.10.0
 ### Fixed
 - Root-caused and fixed the unresponsive Linux tray icon reported on XFCE (v1.9.0 shipped a safety net for this; this release fixes the actual cause). The Linux build now properly compiles and bundles PyGObject/AppIndicator bindings, so pystray correctly selects its `_appindicator` backend instead of silently falling back to the unreliable `_xorg` backend.

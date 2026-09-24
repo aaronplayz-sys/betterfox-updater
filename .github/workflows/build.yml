@@ -164,9 +164,24 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Refreshes apt's package index before any installs below. Without
+      # this, apt can reference file versions a mirror has already rotated
+      # out (the mirror serves a newer index than the runner's cached one),
+      # producing 404s like:
+      #   E: Failed to fetch .../libglib2.0-dev_X.Y.Z... 404 Not Found
+      # This is a stale-index problem, not a package or dependency issue.
+      - name: Update apt package index
+        run: sudo apt-get update
+
       # tkinter is not bundled with Python on Ubuntu — must be installed separately
       - name: Install tkinter
-        run: sudo apt-get install -y python3-tk
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get install -y python3-tk && break
+            echo "apt-get install failed (attempt $i/3), retrying in 10s..."
+            sleep 10
+            sudo apt-get update
+          done
 
       # PyGObject (the "gi" module) provides the AppIndicator bindings pystray
       # needs to use its most reliable Linux tray backend. actions/setup-python
@@ -182,18 +197,27 @@ jobs:
       # issues). This produces a binary users can't get out of via the tray at
       # all — see the iconify()/Quit App fallback added in app.py for the
       # user-facing safety net, independent of this fix.
+      #
+      # Wrapped in a retry loop — the Azure Ubuntu mirror GitHub-hosted
+      # runners use has a known history of occasional transient 404s on
+      # individual packages, self-resolving on retry after a fresh update.
       - name: Install PyGObject build dependencies and AppIndicator bindings
         run: |
-          sudo apt-get install -y \
-            libgirepository1.0-dev \
-            gobject-introspection \
-            libcairo2-dev \
-            pkg-config \
-            python3-dev \
-            gir1.2-gtk-3.0 \
-            gir1.2-ayatanaappindicator3-0.1 \
-            libdbus-1-dev \
-            libdbus-glib-1-dev
+          for i in 1 2 3; do
+            sudo apt-get install -y \
+              libgirepository1.0-dev \
+              gobject-introspection \
+              libcairo2-dev \
+              pkg-config \
+              python3-dev \
+              gir1.2-gtk-3.0 \
+              gir1.2-ayatanaappindicator3-0.1 \
+              libdbus-1-dev \
+              libdbus-glib-1-dev && break
+            echo "apt-get install failed (attempt $i/3), retrying in 10s..."
+            sleep 10
+            sudo apt-get update
+          done
 
       # plyer's Linux notification backend uses python-dbus (the `dbus`
       # module). Without it, plyer falls back to a less direct path — the

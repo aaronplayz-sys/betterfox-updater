@@ -60,7 +60,7 @@ except ImportError:
     PLYER_AVAILABLE = False
 
 
-APP_VERSION   = "1.10.0"
+APP_VERSION   = "1.11.0"
 RELEASES_URL  = "https://github.com/aaronplayz-sys/betterfox-updater/releases"
 
 INTERVAL_LABELS = ["On launch only", "Daily", "Weekly", "Every 4 weeks"]

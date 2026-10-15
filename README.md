@@ -66,7 +66,7 @@ Support for forks may be added in a future version, see the [To-do](#to-do) list
 - [ ] Localization, would need help
 - [ ] Support for Firefox forks (LibreWolf, Waterfox, Zen Browser, etc.) and portable installs
 - [x] Proper settings window, dedicated settings tab or dialog to give room to grow without cluttering the primary sync/update screen
-- [ ] Rollback safety net, dry-run showing exactly what would change before committing 
+- [x] Rollback safety net, dry-run showing exactly what would change before committing 
 - [x] Update check on the log itself, a small "X days since last check" or "last synced: <date>" in the main window
 - [ ] Dark/light theme toggle
 - [ ] Export/import settings, the ability to backup config.json and override files as a zip
@@ -86,10 +86,10 @@ Support for forks may be added in a future version, see the [To-do](#to-do) list
    | `windows-overrides.js` / `mac-overrides.js` / `linux-overrides.js` | Matches your OS |
    | `nvidia-overrides.js` / `amd-overrides.js` / `intel-gpu-overrides.js` | Matches your GPU (Windows / Linux) |
    | `apple-silicon-overrides.js` / `apple-intel-overrides.js` | Matches your Mac chip (macOS) |
-3. Run the application and click **Sync Now**.
+3. Run the application and click **Update Now**.
 4. Restart Firefox to apply changes.
 
-To roll back a sync, select a backup from the **Restore a backup** dropdown and click **Restore**, then restart Firefox.
+To roll back an update, select a backup from the **Restore a backup** dropdown and click **Restore**, then restart Firefox.
 
 ## 🛠 Developer Setup
 
@@ -101,6 +101,13 @@ git clone https://github.com/aaronplayz-sys/betterfox-updater.git
 cd betterfox-updater
 python -m venv .venv
 ```
+
+> **Linux:** the system tray needs PyGObject, which comes from your package manager rather than pip. Install the system packages first, then create the venv with access to them:
+> ```
+> sudo apt install python3-tk python3-gi gir1.2-ayatanaappindicator3-0.1
+> python3 -m venv --system-site-packages .venv
+> ```
+> Without this, the tray icon appears but doesn't respond to clicks. Check the `[tray] pystray backend:` line in the console: it should say `_appindicator`, not `_xorg`.
 
 **2. Activate virtual environment**
 

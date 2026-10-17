@@ -2,6 +2,19 @@
 
 All notable changes to Betterfox Updater are documented here. Dates and specifics for versions prior to v1.4.0 are approximate, as formal changelogs began partway through development.
 
+## [1.12.0]
+
+### Added
+- **Appearance setting** in Settings: choose System, Light, or Dark. The choice is saved to `config.json` (`appearance_mode`) and applied at launch, so the window never flashes the wrong theme.
+- **Tray diagnostic hint** (Linux): when the tray falls back to the Xorg backend, the log explains why tray clicks may not work and how to fix it when running from source.
+
+### Fixed
+- Text was unreadable in light mode. Several labels used hard-coded white text, which disappeared on light backgrounds. This showed up on desktops such as XFCE, where the system dark theme isn't detected and the app defaulted to light. Status and warning text now adapts to the active theme.
+
+### Documentation
+- README: Developer Setup now covers creating the venv with `--system-site-packages` on Linux so the tray works when running from source.
+- README: To-do list and How to Use updated for Preview Changes and the theme toggle.
+
 ## v1.11.0
 ### Added
 - Preview Changes (dry-run) — shows exactly what a sync would add, change, and remove before writing anything, with Cancel/Apply.

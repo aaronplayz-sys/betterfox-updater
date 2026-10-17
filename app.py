@@ -60,13 +60,25 @@ except ImportError:
     PLYER_AVAILABLE = False
 
 
-APP_VERSION   = "1.11.0"
+APP_VERSION   = "1.12.0"
 RELEASES_URL  = "https://github.com/aaronplayz-sys/betterfox-updater/releases"
 
 INTERVAL_LABELS = ["On launch only", "Daily", "Weekly", "Every 4 weeks"]
 INTERVAL_KEYS   = ["on_launch", "daily", "weekly", "every_4_weeks"]
 LABEL_TO_KEY    = dict(zip(INTERVAL_LABELS, INTERVAL_KEYS))
 KEY_TO_LABEL    = dict(zip(INTERVAL_KEYS, INTERVAL_LABELS))
+
+# Appearance. "System" relies on darkdetect, which can't see the dark theme on
+# some Linux desktops (e.g. XFCE), so users can force Light or Dark.
+THEME_LABELS = ["System", "Light", "Dark"]
+THEME_KEYS   = ["system", "light", "dark"]
+THEME_LABEL_TO_KEY = dict(zip(THEME_LABELS, THEME_KEYS))
+THEME_KEY_TO_LABEL = dict(zip(THEME_KEYS, THEME_LABELS))
+
+# (light mode, dark mode) pairs so text stays readable in both themes
+TEXT_COLOR  = ("gray10", "gray90")
+STATUS_BLUE = ("#1F538D", "#6CB4EE")
+WARN_YELLOW = ("#9A6700", "#FFD700")
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +398,13 @@ def _setup_tray():
     desktop_env = os.environ.get("XDG_CURRENT_DESKTOP", "unknown")
     print(f"  [tray]  Platform: {system}, Desktop: {desktop_env}")
     print(f"  [tray]  pystray backend: {pystray.Icon.__module__}")
+    if system == "Linux" and pystray.Icon.__module__.endswith("_xorg"):
+        print(
+            "  [tray]  Hint: using the Xorg fallback, so tray clicks may not work.\n"
+            "          Running from source? Install python3-gi and\n"
+            "          gir1.2-ayatanaappindicator3-0.1, then recreate the venv with\n"
+            "          `python3 -m venv --system-site-packages .venv`."
+        )
 
     global _tray_icon
 
@@ -478,6 +497,18 @@ def _schedule_loop():
     while not _quit_event.wait(timeout=60):
         if is_check_due(get_base_path()):
             _background_check()
+
+
+# ---------------------------------------------------------------------------
+# Appearance (theme)
+# ---------------------------------------------------------------------------
+
+def _on_theme_change(choice: str):
+    key = THEME_LABEL_TO_KEY.get(choice, "system")
+    ctk.set_appearance_mode(key)
+    cfg = load_config(get_base_path())
+    cfg["appearance_mode"] = key
+    save_config(get_base_path(), cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -592,10 +623,10 @@ def start_update():
         if not proceed:
             return
     else:
-        firefox_banner.configure(text="", text_color="yellow")
+        firefox_banner.configure(text="", text_color=WARN_YELLOW)
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Updating...", text_color="blue")
+    status_label.configure(text="Status: Updating...", text_color=STATUS_BLUE)
     _set_buttons("disabled")
     threading.Thread(target=_run_update, args=(profile["path"],), daemon=True).start()
 
@@ -637,13 +668,13 @@ def start_preview():
         return
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Preparing preview...", text_color="blue")
+    status_label.configure(text="Status: Preparing preview...", text_color=STATUS_BLUE)
     _set_buttons("disabled")
     threading.Thread(target=_run_preview, args=(profile["path"],), daemon=True).start()
 
 
 def _on_preview_ready(prepared: dict | None):
-    status_label.configure(text="Status: Ready", text_color="white")
+    status_label.configure(text="Status: Ready", text_color=TEXT_COLOR)
     _set_buttons("normal")
     if prepared is None:
         # prepare_update() already printed the reason to the log — e.g.
@@ -751,7 +782,7 @@ def show_preview_window(prepared: dict):
     def on_apply():
         win.destroy()
         log_box.delete("0.0", "end")
-        status_label.configure(text="Status: Updating...", text_color="blue")
+        status_label.configure(text="Status: Updating...", text_color=STATUS_BLUE)
         _set_buttons("disabled")
         threading.Thread(target=_run_apply_from_preview, args=(prepared,), daemon=True).start()
 
@@ -795,7 +826,7 @@ def start_restore():
         return
 
     log_box.delete("0.0", "end")
-    status_label.configure(text="Status: Restoring...", text_color="blue")
+    status_label.configure(text="Status: Restoring...", text_color=STATUS_BLUE)
     _set_buttons("disabled")
     threading.Thread(
         target=_run_restore, args=(backup_path, profile["path"]), daemon=True
@@ -856,7 +887,7 @@ def show_settings_window():
     and start with system controls. Non-modal — the main window stays usable."""
     win = ctk.CTkToplevel(app)
     win.title("Settings")
-    win.geometry("420x360")
+    win.geometry("420x430")
     win.resizable(False, False)
 
     # Keep it on top of the main window without blocking interaction with it
@@ -864,7 +895,7 @@ def show_settings_window():
 
     app.update_idletasks()
     x = app.winfo_x() + (app.winfo_width()  - 420) // 2
-    y = app.winfo_y() + (app.winfo_height() - 360) // 2
+    y = app.winfo_y() + (app.winfo_height() - 430) // 2
     win.geometry(f"+{x}+{y}")
 
     ctk.CTkLabel(win, text="Settings", font=("Arial", 18, "bold")).pack(pady=(20, 16))
@@ -881,6 +912,17 @@ def show_settings_window():
     cfg      = load_config(get_base_path())
     interval = cfg.get("check_interval", "weekly")
     settings_interval_menu.set(KEY_TO_LABEL.get(interval, "Weekly"))
+
+    # --- Appearance ---
+    ctk.CTkLabel(win, text="Appearance:", font=("Arial", 13)).pack(pady=(4, 4))
+    settings_theme_menu = ctk.CTkOptionMenu(
+        win, values=THEME_LABELS,
+        command=_on_theme_change, width=220,
+    )
+    settings_theme_menu.pack(pady=(0, 16))
+    settings_theme_menu.set(
+        THEME_KEY_TO_LABEL.get(cfg.get("appearance_mode", "system"), "System")
+    )
 
     # --- Start minimized ---
     settings_start_minimized_check = ctk.CTkCheckBox(
@@ -1080,6 +1122,11 @@ def _set_window_icon():
 # GUI layout
 # ---------------------------------------------------------------------------
 
+# Apply the saved theme before any widgets exist so nothing flashes in the
+# wrong colors on launch.
+_saved_theme = load_config(get_base_path()).get("appearance_mode", "system")
+ctk.set_appearance_mode(_saved_theme if _saved_theme in THEME_KEYS else "system")
+
 app = ctk.CTk()
 _set_window_icon()
 
@@ -1157,7 +1204,7 @@ open_folder_button = ctk.CTkButton(
 open_folder_button.pack(side="left", padx=(6, 0))
 
 # Status
-status_label = ctk.CTkLabel(app, text="Status: Ready", text_color="white")
+status_label = ctk.CTkLabel(app, text="Status: Ready", text_color=TEXT_COLOR)
 status_label.pack(pady=(8, 4))
 
 # Update / Preview buttons
@@ -1172,7 +1219,7 @@ preview_button = ctk.CTkButton(
 preview_button.pack(side="left")
 
 # Restore section
-ctk.CTkLabel(app, text="── Restore a backup ──", text_color="white", font=("Arial", 13)).pack(pady=(14, 4))
+ctk.CTkLabel(app, text="── Restore a backup ──", text_color=TEXT_COLOR, font=("Arial", 13)).pack(pady=(14, 4))
 
 restore_frame = ctk.CTkFrame(app, fg_color="transparent")
 restore_frame.pack(pady=4)
